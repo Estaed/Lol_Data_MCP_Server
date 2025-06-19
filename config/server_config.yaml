@@ -1,0 +1,27 @@
+# MCP Server Configuration
+server:
+  host: "0.0.0.0"
+  port: 8000
+  debug: true
+  
+database:
+  url: "postgresql://lol_user:lol_pass@localhost:5432/lol_data"
+  pool_size: 10
+  max_overflow: 20
+  
+redis:
+  url: "redis://localhost:6379/0"
+  max_connections: 10
+  
+data_sources:
+  wiki:
+    base_url: "https://leagueoflegends.fandom.com"
+    rate_limit: 1.0  # seconds between requests
+  
+  riot_api:
+    enabled: true
+    rate_limit: 0.5
+    
+logging:
+  level: "INFO"
+  format: "json"

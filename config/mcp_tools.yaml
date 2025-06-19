@@ -1,0 +1,26 @@
+# MCP Tools Configuration
+tools:
+  get_champion_data:
+    description: "Get comprehensive champion information"
+    timeout: 30
+    cache_ttl: 3600
+    
+  get_ability_details:
+    description: "Get detailed ability information" 
+    timeout: 15
+    cache_ttl: 3600
+    
+  get_item_data:
+    description: "Get item information and stats"
+    timeout: 15
+    cache_ttl: 3600
+    
+  search_champions:
+    description: "Search champions by criteria"
+    timeout: 10
+    cache_ttl: 1800
+    
+  get_meta_builds:
+    description: "Get current meta builds and statistics"
+    timeout: 20
+    cache_ttl: 900  # 15 minutes for meta data
