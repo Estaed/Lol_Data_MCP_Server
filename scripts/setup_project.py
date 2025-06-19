@@ -45,7 +45,7 @@ redis:
   
 data_sources:
   wiki:
-    base_url: "https://leagueoflegends.fandom.com"
+    base_url: "https://wiki.leagueoflegends.com"
     rate_limit: 1.0  # seconds between requests
   
   riot_api:
@@ -62,7 +62,7 @@ sources:
   lol_wiki:
     name: "League of Legends Wiki"
     type: "scraper"
-    base_url: "https://leagueoflegends.fandom.com"
+    base_url: "https://wiki.leagueoflegends.com"
     endpoints:
       champion_page: "/wiki/{champion}"
       item_page: "/wiki/{item}"

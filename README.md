@@ -110,10 +110,44 @@ python examples/test_connection.py
 
 ## 📚 Documentation
 
+### Project Documentation
 - **[Project Specification](docs/project_specification.md)**: Detailed requirements and features
 - **[Architecture Guide](docs/architecture.md)**: System design and components
 - **[API Reference](docs/api_reference.md)**: Complete MCP tools documentation
 - **[MCP Protocol Guide](docs/mcp_protocol_guide.md)**: Understanding MCP integration
+
+### External Data Sources
+- **[League of Legends Wiki](https://wiki.leagueoflegends.com/en-us/)**: Primary data source for champions, items, abilities
+- **[Riot Data Dragon](https://developer.riotgames.com/docs/lol#data-dragon)**: Official Riot API for game data
+- **[Riot Games API](https://developer.riotgames.com/)**: Live game data and statistics
+
+### IDE Integration - Cursor Settings
+For enhanced development experience, add these documentation sources to your Cursor IDE settings:
+
+1. **Open Cursor Settings** → `Cursor: Docs`
+2. **Add Documentation Sources**:
+   ```json
+   {
+     "sources": [
+       {
+         "name": "League of Legends Wiki",
+         "url": "https://wiki.leagueoflegends.com/en-us/",
+         "description": "Official LoL game data and mechanics"
+       },
+       {
+         "name": "Riot Developer Portal", 
+         "url": "https://developer.riotgames.com/",
+         "description": "Riot APIs and Data Dragon documentation"
+       },
+       {
+         "name": "MCP Protocol Spec",
+         "url": "https://spec.modelcontextprotocol.io/",
+         "description": "Model Context Protocol specification"
+       }
+     ]
+   }
+   ```
+3. **Index for Auto-completion**: Enable indexing for LoL-specific terminology and data structures
 
 ## 🎮 Example Usage
 

@@ -15,7 +15,7 @@ redis:
   
 data_sources:
   wiki:
-    base_url: "https://leagueoflegends.fandom.com"
+    base_url: "https://wiki.leagueoflegends.com"
     rate_limit: 1.0  # seconds between requests
   
   riot_api:
