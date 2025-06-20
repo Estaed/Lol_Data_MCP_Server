@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
-    {name = "Project Taric Team", email = "taric@example.com"}
+    {name = "Project Taric Team", email = "tarik.estaed@gmail.com"}
 ]
 keywords = ["mcp", "league-of-legends", "lol", "api", "server", "game-data"]
 classifiers = [
