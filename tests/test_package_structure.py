@@ -6,7 +6,11 @@ This test verifies that the package is properly structured and can be imported.
 
 import pytest
 import sys
+import os
 from pathlib import Path
+
+# Ensure the package is in Python path for testing
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
 def test_package_can_be_imported():

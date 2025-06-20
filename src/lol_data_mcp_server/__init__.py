@@ -8,7 +8,7 @@ AI agents, and other applications.
 
 __version__ = "1.0.0"
 __author__ = "Project Taric Team"
-__email__ = "taric@example.com"
+__email__ = "tarik.estaed@gmail.com"
 
 from typing import Dict, Any
 
