@@ -75,10 +75,14 @@ This MCP server is designed to integrate with other LoL development projects:
 
 ## 🏗️ Development Phases
 
-### Phase 1: MCP Server Foundation
-- Core MCP protocol implementation
-- Basic wiki data extraction
-- Champion and item data endpoints
+### Phase 1: MCP Server Foundation ✅ **TASK 1.2 COMPLETED**
+- ✅ **Core MCP protocol implementation** - Basic MCP server framework with WebSocket support
+- ✅ **Basic message handling** - initialize, list_tools, call_tool methods implemented
+- ✅ **Health check endpoint** - `/health` endpoint for monitoring server status
+- ✅ **Error handling and logging** - Comprehensive error handling with structured logging
+- ✅ **Graceful shutdown** - Proper server lifecycle management
+- 🔄 Basic wiki data extraction (Next: Task 2.1)
+- 🔄 Champion and item data endpoints (Next: Task 1.3-1.4)
 
 ### Phase 2: Enhanced Data Sources
 - Riot API integration
@@ -98,15 +102,29 @@ This MCP server is designed to integrate with other LoL development projects:
 ## 🔧 Quick Start
 
 ```bash
-# Install dependencies
+# 1. Set up virtual environment
+python -m venv venv
+.\venv\Scripts\Activate.ps1  # Windows
+# or: source venv/bin/activate  # Unix
+
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# Start MCP server
-python scripts/setup_server.py
+# 3. Start MCP server (Task 1.2 - Basic Framework)
+python -m src.mcp_server.server
 
-# Test connection
-python examples/test_connection.py
+# 4. Test server health
+curl http://localhost:8000/health
+
+# 5. Run tests
+pytest tests/test_mcp_server.py -v
 ```
+
+### Current Functionality (Task 1.2)
+- ✅ MCP WebSocket server running on `ws://localhost:8000/mcp`
+- ✅ Health check endpoint at `http://localhost:8000/health`
+- ✅ Basic MCP tools: `ping` and `server_info`
+- ✅ Full MCP protocol compliance for initialization and tool management
 
 ## 📚 Documentation
 

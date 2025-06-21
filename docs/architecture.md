@@ -47,15 +47,19 @@ The LoL Data MCP Server is designed as a high-performance, scalable service that
 
 ### 1. MCP Server Layer
 
-**FastAPI Application**
-- Handles HTTP/WebSocket connections
-- Implements MCP protocol specification
-- Provides health checks and metrics endpoints
+**FastAPI Application** ✅ **IMPLEMENTED (Task 1.2)**
+- ✅ Handles HTTP/WebSocket connections with lifespan management
+- ✅ Implements MCP protocol specification over WebSocket at `/mcp`
+- ✅ Provides health checks endpoint at `/health`
+- ✅ Graceful startup and shutdown with proper resource cleanup
+- ✅ Structured logging with contextual information
 
-**MCP Protocol Handler**
-- Translates MCP requests to internal API calls
-- Manages MCP tool registry
-- Handles request/response serialization
+**MCP Protocol Handler** ✅ **IMPLEMENTED (Task 1.2)**
+- ✅ Translates MCP requests to internal API calls
+- ✅ Manages MCP tool registry with basic tools (ping, server_info)
+- ✅ Handles request/response serialization with proper JSON-RPC 2.0 format
+- ✅ Implements MCP protocol methods: initialize, list_tools, call_tool
+- ✅ Error handling with standardized error codes
 
 **Authentication & Rate Limiting**
 - API key validation
