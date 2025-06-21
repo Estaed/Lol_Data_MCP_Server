@@ -1,26 +1,274 @@
-# MCP Tools Configuration
+# MCP Tools Configuration for League of Legends Data Server
+# This file defines the configuration and metadata for all MCP tools
+
+version: "1.0"
+description: "MCP tools configuration for League of Legends data access"
+
+# Tool definitions with complete schemas
 tools:
   get_champion_data:
-    description: "Get comprehensive champion information"
-    timeout: 30
-    cache_ttl: 3600
-    
+    enabled: true
+    description: "Get comprehensive champion information including stats, abilities, and builds"
+    category: "champion_data"
+    rate_limit:
+      requests_per_minute: 60
+      burst_limit: 10
+    cache:
+      ttl_seconds: 300  # 5 minutes for champion data
+      enabled: true
+    schema:
+      type: "object"
+      properties:
+        champion:
+          type: "string"
+          description: "Champion name"
+          examples: ["Taric", "Jinx", "Yasuo"]
+        patch:
+          type: "string"
+          default: "current"
+          description: "Game patch version"
+          pattern: "^(current|\\d+\\.\\d+)$"
+        include:
+          type: "array"
+          items:
+            type: "string"
+            enum: ["stats", "abilities", "builds", "history"]
+          default: ["stats", "abilities"]
+          description: "Data sections to include"
+      required: ["champion"]
+
   get_ability_details:
-    description: "Get detailed ability information" 
-    timeout: 15
-    cache_ttl: 3600
-    
+    enabled: true
+    description: "Get detailed ability information including damage, cooldowns, and scaling"
+    category: "ability_data"
+    rate_limit:
+      requests_per_minute: 100
+      burst_limit: 20
+    cache:
+      ttl_seconds: 600  # 10 minutes for ability data
+      enabled: true
+    schema:
+      type: "object"
+      properties:
+        champion:
+          type: "string"
+          description: "Champion name"
+          examples: ["Taric", "Jinx", "Yasuo"]
+        ability:
+          type: "string"
+          enum: ["passive", "Q", "W", "E", "R"]
+          description: "Ability slot"
+        level:
+          type: "integer"
+          minimum: 1
+          maximum: 18
+          description: "Champion level for scaling calculations"
+        include_scaling:
+          type: "boolean"
+          default: true
+          description: "Include scaling information"
+      required: ["champion", "ability"]
+
   get_item_data:
-    description: "Get item information and stats"
-    timeout: 15
-    cache_ttl: 3600
-    
+    enabled: true
+    description: "Get item information including stats, components, and cost efficiency"
+    category: "item_data"
+    rate_limit:
+      requests_per_minute: 80
+      burst_limit: 15
+    cache:
+      ttl_seconds: 900  # 15 minutes for item data
+      enabled: true
+    schema:
+      type: "object"
+      properties:
+        item:
+          type: "string"
+          description: "Item name or ID"
+          examples: ["Blade of the Ruined King", "Infinity Edge", "3031"]
+        include:
+          type: "array"
+          items:
+            type: "string"
+            enum: ["stats", "components", "passive", "cost"]
+          default: ["stats", "cost"]
+          description: "Data sections to include"
+      required: ["item"]
+
   search_champions:
-    description: "Search champions by criteria"
-    timeout: 10
-    cache_ttl: 1800
-    
+    enabled: true
+    description: "Search champions by name, role, tags, or other criteria"
+    category: "search"
+    rate_limit:
+      requests_per_minute: 40
+      burst_limit: 8
+    cache:
+      ttl_seconds: 180  # 3 minutes for search results
+      enabled: true
+    schema:
+      type: "object"
+      properties:
+        query:
+          type: "string"
+          description: "Search query for champion name or description"
+          minLength: 1
+          maxLength: 100
+        role:
+          type: "string"
+          enum: ["top", "jungle", "mid", "adc", "support"]
+          description: "Champion role filter"
+        tags:
+          type: "array"
+          items:
+            type: "string"
+          description: "Champion tags filter"
+          examples: [["Assassin", "Fighter"], ["Mage", "Support"]]
+        limit:
+          type: "integer"
+          default: 10
+          minimum: 1
+          maximum: 100
+          description: "Maximum results to return"
+
   get_meta_builds:
-    description: "Get current meta builds and statistics"
-    timeout: 20
-    cache_ttl: 900  # 15 minutes for meta data
+    enabled: true
+    description: "Get current meta builds, skill orders, and win rate statistics"
+    category: "meta_data"
+    rate_limit:
+      requests_per_minute: 30
+      burst_limit: 5
+    cache:
+      ttl_seconds: 1800  # 30 minutes for meta data
+      enabled: true
+    schema:
+      type: "object"
+      properties:
+        champion:
+          type: "string"
+          description: "Champion name"
+          examples: ["Taric", "Jinx", "Yasuo"]
+        role:
+          type: "string"
+          description: "Champion role for role-specific builds"
+          examples: ["support", "adc", "mid"]
+        rank:
+          type: "string"
+          enum: ["all", "diamond+", "master+"]
+          default: "all"
+          description: "Rank tier for statistics"
+        patch:
+          type: "string"
+          default: "current"
+          description: "Game patch version"
+          pattern: "^(current|\\d+\\.\\d+)$"
+      required: ["champion"]
+
+# Global configuration
+global_settings:
+  # Default cache settings
+  default_cache:
+    enabled: true
+    ttl_seconds: 300
+    max_size: 1000
+  
+  # Default rate limiting
+  default_rate_limit:
+    requests_per_minute: 60
+    burst_limit: 10
+    enable_per_user_limits: true
+  
+  # Tool execution settings
+  execution:
+    timeout_seconds: 30
+    max_concurrent_requests: 100
+    enable_request_logging: true
+  
+  # Error handling
+  error_handling:
+    max_retries: 3
+    retry_delay_seconds: 1
+    enable_circuit_breaker: true
+    circuit_breaker_threshold: 5
+  
+  # Monitoring
+  monitoring:
+    enable_metrics: true
+    enable_health_checks: true
+    metrics_port: 9090
+
+# Tool categories for organization
+categories:
+  champion_data:
+    description: "Tools for accessing champion information"
+    tools: ["get_champion_data"]
+  
+  ability_data:
+    description: "Tools for accessing ability details"
+    tools: ["get_ability_details"]
+  
+  item_data:
+    description: "Tools for accessing item information"
+    tools: ["get_item_data"]
+  
+  search:
+    description: "Tools for searching and discovery"
+    tools: ["search_champions"]
+  
+  meta_data:
+    description: "Tools for accessing meta game data"
+    tools: ["get_meta_builds"]
+
+# Environment-specific overrides
+environments:
+  development:
+    global_settings:
+      default_cache:
+        ttl_seconds: 60  # Shorter cache in dev
+      default_rate_limit:
+        requests_per_minute: 120  # Higher limits in dev
+      execution:
+        enable_request_logging: true
+        timeout_seconds: 60
+  
+  production:
+    global_settings:
+      default_cache:
+        ttl_seconds: 600  # Longer cache in prod
+      default_rate_limit:
+        requests_per_minute: 60
+      execution:
+        enable_request_logging: false
+        timeout_seconds: 30
+      monitoring:
+        enable_metrics: true
+        enable_health_checks: true
+
+# Data source priorities and fallbacks
+data_sources:
+  priority_order:
+    - "riot_api"
+    - "wiki_scraper"
+    - "community_apis"
+  
+  fallback_strategy:
+    enable_fallback: true
+    cache_stale_data: true
+    max_staleness_hours: 24
+  
+  source_configs:
+    riot_api:
+      enabled: true
+      base_url: "https://ddragon.leagueoflegends.com"
+      rate_limit:
+        requests_per_minute: 100
+    
+    wiki_scraper:
+      enabled: true
+      base_url: "https://leagueoflegends.fandom.com"
+      rate_limit:
+        requests_per_minute: 30
+    
+    community_apis:
+      enabled: true
+      rate_limit:
+        requests_per_minute: 60

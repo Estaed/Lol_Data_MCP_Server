@@ -80,7 +80,11 @@ class MCPServer:
                 handler = getattr(self.app.state, "mcp_handler", None)
                 if handler and await handler.is_healthy():
                     return JSONResponse(
-                        {"status": "healthy", "service": "lol-data-mcp-server", "version": "1.0.0"}
+                        {
+                            "status": "healthy",
+                            "service": "lol-data-mcp-server",
+                            "version": "1.0.0",
+                        }
                     )
                 else:
                     raise HTTPException(status_code=503, detail="Service unhealthy")
@@ -112,7 +116,9 @@ class MCPServer:
                 # Receive message from client
                 try:
                     message = await websocket.receive_text()
-                    logger.debug("Received MCP message", client_id=client_id, message=message)
+                    logger.debug(
+                        "Received MCP message", client_id=client_id, message=message
+                    )
 
                     # Parse JSON message
                     try:
@@ -127,16 +133,24 @@ class MCPServer:
                     # Send response back to client
                     if response:
                         await websocket.send_text(json.dumps(response))
-                        logger.debug("Sent MCP response", client_id=client_id, response=response)
+                        logger.debug(
+                            "Sent MCP response", client_id=client_id, response=response
+                        )
 
                 except WebSocketDisconnect:
                     break
                 except Exception as e:
-                    logger.error("Error processing MCP message", client_id=client_id, error=str(e))
+                    logger.error(
+                        "Error processing MCP message",
+                        client_id=client_id,
+                        error=str(e),
+                    )
                     await self._send_error(websocket, "Internal server error", str(e))
 
         except Exception as e:
-            logger.error("WebSocket connection error", client_id=client_id, error=str(e))
+            logger.error(
+                "WebSocket connection error", client_id=client_id, error=str(e)
+            )
         finally:
             logger.info("MCP client disconnected", client_id=client_id)
 
@@ -151,7 +165,11 @@ class MCPServer:
         """
         error_response = {
             "jsonrpc": "2.0",
-            "error": {"code": -32603, "message": error_type, "data": message},  # Internal error
+            "error": {
+                "code": -32603,
+                "message": error_type,
+                "data": message,
+            },  # Internal error
         }
 
         try:
@@ -174,7 +192,11 @@ class MCPServer:
         logger.info("Starting MCP server", host=self.host, port=self.port)
 
         config = uvicorn.Config(
-            app=self.app, host=self.host, port=self.port, log_level="info", access_log=True
+            app=self.app,
+            host=self.host,
+            port=self.port,
+            log_level="info",
+            access_log=True,
         )
 
         server = uvicorn.Server(config)

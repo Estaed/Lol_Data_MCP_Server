@@ -1,1 +1,1 @@
-# Storage Module for LoL MCP Server 
+# Storage Module for LoL MCP Server

@@ -1,1 +1,1 @@
-# Query Engine Module for LoL MCP Server 
+# Query Engine Module for LoL MCP Server

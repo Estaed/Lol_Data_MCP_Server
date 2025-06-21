@@ -93,7 +93,9 @@ class MCPHandler:
                 message.get("id"), -32603, f"Internal error: {str(e)}"
             )
 
-    async def _handle_initialize(self, message_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_initialize(
+        self, message_id: str, params: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Handle MCP initialize request.
 
@@ -149,7 +151,9 @@ class MCPHandler:
         # No response needed for notifications
         return None
 
-    async def _handle_list_tools(self, message_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_list_tools(
+        self, message_id: str, params: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Handle tools/list request.
 
@@ -174,7 +178,9 @@ class MCPHandler:
 
         return {"jsonrpc": "2.0", "id": message_id, "result": {"tools": tools_list}}
 
-    async def _handle_call_tool(self, message_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_call_tool(
+        self, message_id: str, params: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Handle tools/call request.
 
@@ -191,7 +197,9 @@ class MCPHandler:
         logger.info("Calling tool", tool_name=tool_name, arguments=arguments)
 
         if tool_name not in self.tools:
-            return self._create_error_response(message_id, -32602, f"Tool not found: {tool_name}")
+            return self._create_error_response(
+                message_id, -32602, f"Tool not found: {tool_name}"
+            )
 
         try:
             # Execute the tool
@@ -224,7 +232,11 @@ class MCPHandler:
         Returns:
             Error response dictionary
         """
-        return {"jsonrpc": "2.0", "id": message_id, "error": {"code": code, "message": message}}
+        return {
+            "jsonrpc": "2.0",
+            "id": message_id,
+            "error": {"code": code, "message": message},
+        }
 
     def _register_basic_tools(self):
         """Register basic tools for initial server functionality."""
@@ -265,7 +277,9 @@ class MCPHandler:
         message = arguments.get("message", "ping")
         return f"pong: {message}"
 
-    async def _handle_server_info_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_server_info_tool(
+        self, arguments: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Handle server info tool execution.
 

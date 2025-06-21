@@ -10,20 +10,22 @@ import os
 import sys
 from pathlib import Path
 
+
 def create_init_files():
     """Create __init__.py files in all Python packages."""
     init_locations = [
         "src/__init__.py",
-        "src/mcp_server/__init__.py", 
-        "tests/__init__.py"
+        "src/mcp_server/__init__.py",
+        "tests/__init__.py",
     ]
-    
+
     for location in init_locations:
         init_file = Path(location)
         init_file.parent.mkdir(parents=True, exist_ok=True)
         if not init_file.exists():
             init_file.write_text("# Package initialization\n")
             print(f"✅ Created {location}")
+
 
 def create_config_files():
     """Create default configuration files."""
@@ -56,7 +58,6 @@ logging:
   level: "INFO"
   format: "json"
 """,
-        
         "config/data_sources.yaml": """# Data Sources Configuration
 sources:
   lol_wiki:
@@ -78,7 +79,6 @@ sources:
       items: "/cdn/{version}/data/en_US/item.json"
     rate_limit: 0.5
 """,
-
         "config/mcp_tools.yaml": """# MCP Tools Configuration
 tools:
   get_champion_data:
@@ -105,15 +105,16 @@ tools:
     description: "Get current meta builds and statistics"
     timeout: 20
     cache_ttl: 900  # 15 minutes for meta data
-"""
+""",
     }
-    
+
     for file_path, content in configs.items():
         config_file = Path(file_path)
         config_file.parent.mkdir(parents=True, exist_ok=True)
         if not config_file.exists():
             config_file.write_text(content)
             print(f"✅ Created {file_path}")
+
 
 def create_example_files():
     """Create example files for testing and demonstration."""
@@ -163,7 +164,6 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 ''',
-
         "examples/integration_demos/project_integration.py": '''"""
 Integration Demo for Projects 1 & 2
 
@@ -215,9 +215,9 @@ async def generate_taric_config_for_sim_env():
 
 if __name__ == "__main__":
     asyncio.run(generate_taric_config_for_sim_env())
-'''
+''',
     }
-    
+
     for file_path, content in examples.items():
         example_file = Path(file_path)
         example_file.parent.mkdir(parents=True, exist_ok=True)
@@ -225,29 +225,42 @@ if __name__ == "__main__":
             example_file.write_text(content)
             print(f"✅ Created {file_path}")
 
+
 def verify_structure():
     """Verify that the project structure is complete."""
     required_dirs = [
-        "docs", "src", "config", "tests", "examples", "scripts",
-        "src/mcp_server", "src/data_sources", "src/data_processing",
-        "src/storage", "src/query_engine", "src/utils",
-        "examples/client_examples", "examples/integration_demos"
+        "docs",
+        "src",
+        "config",
+        "tests",
+        "examples",
+        "scripts",
+        "src/mcp_server",
+        "src/data_sources",
+        "src/data_processing",
+        "src/storage",
+        "src/query_engine",
+        "src/utils",
+        "examples/client_examples",
+        "examples/integration_demos",
     ]
-    
+
     required_files = [
-        "README.md", "requirements.txt", 
-        "docs/project_specification.md", "docs/architecture.md"
+        "README.md",
+        "requirements.txt",
+        "docs/project_specification.md",
+        "docs/architecture.md",
     ]
-    
+
     print("\\n🔍 Verifying project structure...")
-    
+
     # Check directories
     for dir_path in required_dirs:
         if Path(dir_path).exists():
             print(f"✅ Directory: {dir_path}")
         else:
             print(f"❌ Missing directory: {dir_path}")
-    
+
     # Check files
     for file_path in required_files:
         if Path(file_path).exists():
@@ -255,23 +268,24 @@ def verify_structure():
         else:
             print(f"❌ Missing file: {file_path}")
 
+
 def main():
     """Main setup function."""
     print("🚀 Setting up LoL Data MCP Server project...")
     print("=" * 50)
-    
+
     # Change to project directory
     project_root = Path(__file__).parent.parent
     os.chdir(project_root)
-    
+
     # Create all necessary files
     create_init_files()
-    create_config_files() 
+    create_config_files()
     create_example_files()
-    
+
     # Verify everything is set up
     verify_structure()
-    
+
     print("\\n" + "=" * 50)
     print("✅ Project setup complete!")
     print("\\n🎯 Next steps:")
@@ -279,10 +293,11 @@ def main():
     print("2. Set up database: Create PostgreSQL database 'lol_data'")
     print("3. Start development: Begin with Phase 1 implementation")
     print("4. Test MCP connection: Run examples/client_examples/basic_usage.py")
-    
+
     print("\\n📚 Documentation:")
-    print("- Project Specification: docs/project_specification.md") 
+    print("- Project Specification: docs/project_specification.md")
     print("- Architecture Guide: docs/architecture.md")
 
+
 if __name__ == "__main__":
-    main() 
+    main()

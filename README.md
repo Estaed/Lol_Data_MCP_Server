@@ -73,7 +73,7 @@ This MCP server is designed to integrate with other LoL development projects:
 - **Game Analysis Tools**: Meta builds, statistics, and patch tracking
 - **Development Workflows**: Direct IDE integration for instant data access
 
-## 🏗️ Development Phases
+## 🏗️ Current Phase: MCP Server Foundation
 
 ### Phase 1: MCP Server Foundation ✅ **TASK 1.2 COMPLETED**
 - ✅ **Core MCP protocol implementation** - Basic MCP server framework with WebSocket support
@@ -81,23 +81,20 @@ This MCP server is designed to integrate with other LoL development projects:
 - ✅ **Health check endpoint** - `/health` endpoint for monitoring server status
 - ✅ **Error handling and logging** - Comprehensive error handling with structured logging
 - ✅ **Graceful shutdown** - Proper server lifecycle management
-- 🔄 Basic wiki data extraction (Next: Task 2.1)
-- 🔄 Champion and item data endpoints (Next: Task 1.3-1.4)
 
-### Phase 2: Enhanced Data Sources
-- Riot API integration
-- Community API connections
-- Data normalization pipeline
+### ✅ **TASK 1.3 COMPLETED**: Define MCP Tool Schemas
+- ✅ **MCPTool base class** - Complete schema validation system
+- ✅ **All 5 core MCP tools** - get_champion_data, get_ability_details, get_item_data, search_champions, get_meta_builds
+- ✅ **Tool registry system** - Dynamic loading and execution
+- ✅ **YAML configuration** - Complete tool configuration with rate limiting and caching
+- ✅ **Input validation** - Comprehensive Pydantic-based validation
+- ✅ **Test suite** - All tools validated with proper input/output testing
 
-### Phase 3: Intelligence Layer
-- Query engine implementation
-- Advanced caching strategies
-- Patch tracking automation
+### 🎯 Next Steps
+- **Task 1.4**: Implement Basic Champion Data Endpoint  
+- **Task 2.1**: Implement LoL Wiki Scraper
 
-### Phase 4: Production Ready
-- Performance optimization
-- Error handling and resilience
-- Documentation and examples
+> **📋 Full Task Tracking**: See `docs/lol_data_mcp_server.md` for complete task list and detailed progress
 
 ## 🔧 Quick Start
 

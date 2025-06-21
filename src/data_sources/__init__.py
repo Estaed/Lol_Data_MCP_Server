@@ -1,1 +1,1 @@
-# Data Sources Module for LoL MCP Server 
+# Data Sources Module for LoL MCP Server

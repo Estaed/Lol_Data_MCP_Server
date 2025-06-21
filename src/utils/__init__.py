@@ -1,1 +1,1 @@
-# Utils Module for LoL MCP Server 
+# Utils Module for LoL MCP Server
