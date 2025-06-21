@@ -1,0 +1,72 @@
+# LoL Data MCP Server - Cursor Development Rules
+
+## 🚨 CRITICAL: Virtual Environment Workflow
+Before writing ANY code or starting development:
+
+1. **ALWAYS check current directory**: Ensure you're in the correct project folder
+2. **ALWAYS activate virtual environment**: 
+   - Navigate to project root: `cd [project_folder]`
+   - Activate venv: `.\venv\Scripts\Activate.ps1` (Windows) or `source venv/bin/activate` (Unix)
+   - Verify activation: Look for `(venv)` in terminal prompt
+3. **NEVER write code without venv**: All package imports require the virtual environment
+
+## 📁 Project Structure Compliance
+Expected folder structure (as per README.md):
+```
+LoL_Data_MCP_Server/
+├── src/
+│   ├── mcp_server/           # Core MCP server implementation
+│   ├── data_sources/         # Wiki, Riot API, community API integrations
+│   ├── data_processing/      # Parsing, normalization, enrichment
+│   ├── storage/              # Caching, database, file storage
+│   ├── query_engine/         # Search and query capabilities
+│   └── utils/                # Shared utilities
+├── config/
+├── docs/
+├── examples/
+├── scripts/
+├── tests/
+├── venv/                     # Virtual environment (gitignored)
+└── other project files
+```
+
+## 🐍 Python Development Standards
+- Use Python 3.9+ features
+- Follow PEP 8 style guidelines (enforced by black)
+- Add type hints (checked by mypy)
+- Write comprehensive docstrings
+- Use async/await for I/O operations
+
+## 🧪 Testing Requirements
+- Write tests for all new functions
+- Use pytest framework
+- Include both unit and integration tests
+- Maintain >80% test coverage
+
+## 📦 Dependencies Management
+- Add new dependencies to requirements.txt
+- Use pinned versions for production dependencies
+- Separate dev dependencies in requirements-dev.txt if needed
+
+## 🚀 MCP Protocol Standards
+- All MCP tools must have proper input schemas
+- Use Pydantic models for data validation
+- Follow MCP protocol specification exactly
+- Include comprehensive error handling
+
+## 🔍 Code Quality Checklist
+Before submitting any code:
+- [ ] Virtual environment is active
+- [ ] Tests pass: `pytest`
+- [ ] Code is formatted: `black src/`
+- [ ] Type checking passes: `mypy src/`
+- [ ] Linting passes: `flake8 src/`
+- [ ] All imports are sorted: `isort src/`
+
+## 🎯 Development Phases (Current: Phase 1)
+Currently implementing Phase 1: MCP Server Foundation
+- Focus on core MCP protocol implementation
+- Basic wiki data extraction
+- Champion and item data endpoints
+
+Refer to docs/lol_data_mcp_server.md for detailed implementation tasks. 
