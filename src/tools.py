@@ -152,6 +152,15 @@ class GetChampionDataTool(MCPTool):
             name="get_champion_data",
             description="Get comprehensive champion information including stats, abilities, and builds",
         )
+        # Champion service will be initialized lazily to avoid circular imports
+        self._champion_service = None
+    
+    def _get_champion_service(self):
+        """Lazy initialization of champion service to avoid circular imports"""
+        if self._champion_service is None:
+            from .services.champion_service import ChampionService
+            self._champion_service = ChampionService()
+        return self._champion_service
 
     def get_schema(self) -> MCPToolSchema:
         return MCPToolSchema(
@@ -181,20 +190,14 @@ class GetChampionDataTool(MCPTool):
         )
 
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute champion data retrieval"""
-        validated_params = GetChampionDataInput(**params)
-
-        # TODO: Implement actual data retrieval logic
-        # For now, return mock structure
-        return {
-            "champion": validated_params.champion,
-            "patch": validated_params.patch,
-            "data_included": validated_params.include,
-            "stats": {} if "stats" in validated_params.include else None,
-            "abilities": {} if "abilities" in validated_params.include else None,
-            "builds": {} if "builds" in validated_params.include else None,
-            "history": {} if "history" in validated_params.include else None,
-        }
+        """Execute champion data retrieval using ChampionService"""
+        # Use the champion service to get actual data
+        champion_service = self._get_champion_service()
+        return await champion_service.get_champion_data(
+            champion=params.get("champion"),
+            patch=params.get("patch", "current"),
+            include=params.get("include", ["stats", "abilities"])
+        )
 
 
 class GetAbilityDetailsTool(MCPTool):

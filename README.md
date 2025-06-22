@@ -43,6 +43,7 @@ LoL_Data_MCP_Server/
 │   └── mcp_protocol_guide.md
 ├── src/
 │   ├── mcp_server/           # Core MCP server implementation
+│   ├── services/             # Business logic and data services (NEW - Task 1.4)
 │   ├── data_sources/         # Wiki, Riot API, community API integrations
 │   ├── data_processing/      # Parsing, normalization, enrichment
 │   ├── storage/              # Caching, database, file storage
@@ -90,8 +91,16 @@ This MCP server is designed to integrate with other LoL development projects:
 - ✅ **Input validation** - Comprehensive Pydantic-based validation
 - ✅ **Test suite** - All tools validated with proper input/output testing
 
+### ✅ **TASK 1.4 COMPLETED**: Implement Basic Champion Data Endpoint
+- ✅ **ChampionService class** - Service layer for champion data operations
+- ✅ **Mock data for Taric** - Complete champion data with stats and abilities  
+- ✅ **Pydantic validation** - Comprehensive data models and input validation
+- ✅ **Error handling** - Custom ChampionNotFoundError with proper logging
+- ✅ **Structured logging** - Request/response logging with structured data
+- ✅ **MCP integration** - get_champion_data tool returns valid Taric data
+- ✅ **Test coverage** - 16 unit tests covering all functionality
+
 ### 🎯 Next Steps
-- **Task 1.4**: Implement Basic Champion Data Endpoint  
 - **Task 2.1**: Implement LoL Wiki Scraper
 
 > **📋 Full Task Tracking**: See `docs/lol_data_mcp_server.md` for complete task list and detailed progress
