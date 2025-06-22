@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime
 
 import structlog
+from .tools import ToolRegistry
 
 logger = structlog.get_logger()
 
@@ -31,7 +32,7 @@ class MCPHandler:
             "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
         }
 
-        self.tools = {}
+        self.tool_registry = ToolRegistry()
         self.clients = {}
         self.initialized = False
 
@@ -39,17 +40,18 @@ class MCPHandler:
         """Initialize the MCP handler and load available tools."""
         logger.info("Initializing MCP handler")
 
-        # Initialize basic tools (will be expanded in later tasks)
+        # Register both basic tools and LoL data tools
         self._register_basic_tools()
-
+        
         self.initialized = True
-        logger.info("MCP handler initialized", tools_count=len(self.tools))
+        total_tools = len(self.tool_registry.list_tools()) + len(self.basic_tools)
+        logger.info("MCP handler initialized", tools_count=total_tools)
 
     async def cleanup(self):
         """Clean up resources."""
         logger.info("Cleaning up MCP handler")
         self.clients.clear()
-        self.tools.clear()
+        self.basic_tools.clear()
         self.initialized = False
 
     async def is_healthy(self) -> bool:
@@ -167,7 +169,17 @@ class MCPHandler:
         logger.debug("Listing available tools")
 
         tools_list = []
-        for tool_name, tool_info in self.tools.items():
+        
+        # Add LoL data tools
+        for tool_schema in self.tool_registry.list_tools():
+            tools_list.append({
+                "name": tool_schema.name,
+                "description": tool_schema.description,
+                "inputSchema": tool_schema.input_schema,
+            })
+        
+        # Add basic tools
+        for tool_name, tool_info in self.basic_tools.items():
             tools_list.append(
                 {
                     "name": tool_name,
@@ -196,27 +208,41 @@ class MCPHandler:
 
         logger.info("Calling tool", tool_name=tool_name, arguments=arguments)
 
-        if tool_name not in self.tools:
-            return self._create_error_response(
-                message_id, -32602, f"Tool not found: {tool_name}"
-            )
+        # Try LoL data tools first
+        tool = self.tool_registry.get_tool(tool_name)
+        if tool:
+            try:
+                result = await tool.execute(arguments)
+                return {
+                    "jsonrpc": "2.0",
+                    "id": message_id,
+                    "result": {"content": [{"type": "text", "text": str(result)}]},
+                }
+            except Exception as e:
+                logger.error("LoL tool execution failed", tool_name=tool_name, error=str(e))
+                return self._create_error_response(
+                    message_id, -32603, f"Tool execution failed: {str(e)}"
+                )
 
-        try:
-            # Execute the tool
-            tool_handler = self.tools[tool_name]["handler"]
-            result = await tool_handler(arguments)
+        # Try basic tools
+        if tool_name in self.basic_tools:
+            try:
+                tool_handler = self.basic_tools[tool_name]["handler"]
+                result = await tool_handler(arguments)
+                return {
+                    "jsonrpc": "2.0",
+                    "id": message_id,
+                    "result": {"content": [{"type": "text", "text": str(result)}]},
+                }
+            except Exception as e:
+                logger.error("Basic tool execution failed", tool_name=tool_name, error=str(e))
+                return self._create_error_response(
+                    message_id, -32603, f"Tool execution failed: {str(e)}"
+                )
 
-            return {
-                "jsonrpc": "2.0",
-                "id": message_id,
-                "result": {"content": [{"type": "text", "text": str(result)}]},
-            }
-
-        except Exception as e:
-            logger.error("Tool execution failed", tool_name=tool_name, error=str(e))
-            return self._create_error_response(
-                message_id, -32603, f"Tool execution failed: {str(e)}"
-            )
+        return self._create_error_response(
+            message_id, -32602, f"Tool not found: {tool_name}"
+        )
 
     def _create_error_response(
         self, message_id: Optional[str], code: int, message: str
@@ -240,9 +266,11 @@ class MCPHandler:
 
     def _register_basic_tools(self):
         """Register basic tools for initial server functionality."""
+        
+        self.basic_tools = {}
 
         # Basic ping tool for connectivity testing
-        self.tools["ping"] = {
+        self.basic_tools["ping"] = {
             "description": "Test connectivity and server response",
             "inputSchema": {
                 "type": "object",
@@ -258,7 +286,7 @@ class MCPHandler:
         }
 
         # Server info tool
-        self.tools["server_info"] = {
+        self.basic_tools["server_info"] = {
             "description": "Get server information and status",
             "inputSchema": {"type": "object", "properties": {}},
             "handler": self._handle_server_info_tool,
@@ -289,10 +317,13 @@ class MCPHandler:
         Returns:
             Server information
         """
+        total_tools = len(self.tool_registry.list_tools()) + len(self.basic_tools)
         return {
             "server": self.server_info,
             "stats": {
-                "tools_available": len(self.tools),
+                "tools_available": total_tools,
+                "lol_tools": len(self.tool_registry.list_tools()),
+                "basic_tools": len(self.basic_tools),
                 "clients_connected": len(self.clients),
                 "uptime": "available after full implementation",
             },

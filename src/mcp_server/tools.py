@@ -417,40 +417,36 @@ class GetMetaBuildsTool(MCPTool):
 
 
 class ToolRegistry:
-    """Registry for managing and accessing MCP tools"""
+    """Central registry for all MCP tools"""
 
     def __init__(self) -> None:
-        self._tools: Dict[str, MCPTool] = {}
+        self.tools: Dict[str, MCPTool] = {}
         self._register_default_tools()
 
     def _register_default_tools(self) -> None:
-        """Register all default MCP tools"""
-        tools = [
-            GetChampionDataTool(),
-            GetAbilityDetailsTool(),
-            GetItemDataTool(),
-            SearchChampionsTool(),
-            GetMetaBuildsTool(),
-        ]
-
-        for tool in tools:
-            self._tools[tool.name] = tool
+        """Register the default set of tools"""
+        # Register all LoL tools
+        self.register_tool(GetChampionDataTool())
+        self.register_tool(GetAbilityDetailsTool())
+        self.register_tool(GetItemDataTool())
+        self.register_tool(SearchChampionsTool())
+        self.register_tool(GetMetaBuildsTool())
 
     def register_tool(self, tool: MCPTool) -> None:
         """Register a new tool"""
-        self._tools[tool.name] = tool
+        self.tools[tool.name] = tool
 
     def get_tool(self, name: str) -> Optional[MCPTool]:
         """Get a tool by name"""
-        return self._tools.get(name)
+        return self.tools.get(name)
 
     def list_tools(self) -> List[MCPToolSchema]:
         """Get schemas for all registered tools"""
-        return [tool.get_schema() for tool in self._tools.values()]
+        return [tool.get_schema() for tool in self.tools.values()]
 
     def get_tool_names(self) -> List[str]:
         """Get list of all tool names"""
-        return list(self._tools.keys())
+        return list(self.tools.keys())
 
     async def execute_tool(self, name: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a tool by name with parameters"""
