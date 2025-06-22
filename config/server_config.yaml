@@ -3,25 +3,43 @@ server:
   host: "0.0.0.0"
   port: 8000
   debug: true
+  workers: 1
   
 database:
   url: "postgresql://lol_user:lol_pass@localhost:5432/lol_data"
   pool_size: 10
   max_overflow: 20
+  echo: false
+  pool_timeout: 30
+  pool_recycle: 3600
   
 redis:
   url: "redis://localhost:6379/0"
   max_connections: 10
+  socket_timeout: 5
+  socket_connect_timeout: 5
+  retry_on_timeout: true
   
 data_sources:
-  wiki:
-    base_url: "https://wiki.leagueoflegends.com"
-    rate_limit: 1.0  # seconds between requests
-  
-  riot_api:
-    enabled: true
-    rate_limit: 0.5
+  wiki_base_url: "https://wiki.leagueoflegends.com"
+  wiki_rate_limit: 1.0
+  riot_api_enabled: true
+  riot_api_rate_limit: 0.5
     
 logging:
   level: "INFO"
   format: "json"
+  file_path: null
+  max_file_size: "10MB"
+  backup_count: 5
+
+cache:
+  ttl_champion_data: 3600
+  ttl_item_data: 3600
+  ttl_search_results: 300
+  max_memory_cache_size: 1000
+
+security:
+  api_key_header: "X-API-Key"
+  rate_limit_per_minute: 100
+  allowed_origins: ["*"]

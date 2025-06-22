@@ -1,0 +1,32 @@
+# Production-specific configuration overrides
+environment: production
+
+server:
+  debug: false
+  workers: 4
+  port: 8080
+  
+database:
+  url: "postgresql://lol_prod:secure_pass@db.example.com:5432/lol_data_prod"
+  echo: false
+  pool_size: 20
+  max_overflow: 40
+  
+redis:
+  url: "redis://redis.example.com:6379/0"
+  max_connections: 20
+  
+logging:
+  level: "INFO"
+  format: "json"  # Structured logging for production
+  file_path: "/var/log/lol-mcp-server.log"
+  
+cache:
+  ttl_champion_data: 7200  # Longer cache times for production
+  ttl_item_data: 7200
+  ttl_search_results: 600
+  max_memory_cache_size: 5000
+
+security:
+  rate_limit_per_minute: 1000
+  allowed_origins: ["https://example.com", "https://app.example.com"] 

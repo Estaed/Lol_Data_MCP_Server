@@ -1,0 +1,23 @@
+# Development-specific configuration overrides
+environment: development
+
+server:
+  debug: true
+  workers: 1
+  
+database:
+  url: "postgresql://lol_user:lol_pass@localhost:5432/lol_data_dev"
+  echo: true  # Show SQL queries in development
+  pool_size: 5
+  
+redis:
+  url: "redis://localhost:6379/1"  # Use different Redis DB for dev
+  
+logging:
+  level: "DEBUG"
+  format: "text"  # More readable in development
+  
+cache:
+  ttl_champion_data: 300  # Shorter cache times for development
+  ttl_item_data: 300
+  ttl_search_results: 60 
