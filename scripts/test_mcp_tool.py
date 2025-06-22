@@ -3,7 +3,7 @@ Test script to verify MCP tool functionality for Task 1.4
 """
 
 import asyncio
-from src.tools import tool_registry
+from src.mcp_server.tools import tool_registry
 
 async def test_champion_tool():
     print('Testing get_champion_data MCP tool...')

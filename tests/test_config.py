@@ -17,7 +17,7 @@ import yaml
 from pathlib import Path
 from unittest.mock import patch, mock_open
 
-from src.config import (
+from src.core.config import (
     Settings, Environment, ServerConfig, DatabaseConfig, RedisConfig,
     DataSourcesConfig, LoggingConfig, CacheConfig, SecurityConfig,
     get_settings, reload_settings, create_config_template, _deep_merge
@@ -180,7 +180,7 @@ class TestSettings:
     
     def test_settings_defaults(self):
         """Test settings with default values."""
-        with patch('src.config.Path') as mock_path:
+        with patch('src.core.config.Path') as mock_path:
             # Mock Path to avoid file system operations
             mock_path.return_value.exists.return_value = False
             
@@ -192,7 +192,7 @@ class TestSettings:
     
     def test_settings_helper_methods(self):
         """Test settings helper methods."""
-        with patch('src.config.Path') as mock_path:
+        with patch('src.core.config.Path') as mock_path:
             mock_path.return_value.exists.return_value = False
             
             settings = Settings()
@@ -226,7 +226,7 @@ class TestSettings:
             yaml_file_path = Path(f.name)
         
         try:
-            with patch('src.config.Path') as mock_path_class:
+            with patch('src.core.config.Path') as mock_path_class:
                 # Create a mock path instance
                 mock_path_instance = mock_path_class.return_value
                 mock_path_instance.exists.return_value = True
@@ -353,10 +353,10 @@ class TestConfigurationValidation:
 @pytest.fixture(autouse=True)
 def reset_settings():
     """Reset the global settings instance before each test."""
-    import src.config
-    src.config._settings = None
+    import src.core.config
+    src.core.config._settings = None
     yield
-    src.config._settings = None
+    src.core.config._settings = None
 
 
 # Integration test

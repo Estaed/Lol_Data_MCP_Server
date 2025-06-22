@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class AbilityType(str, Enum):
@@ -86,7 +86,8 @@ class GetChampionDataInput(BaseModel):
         default=["stats", "abilities"], description="Data sections to include"
     )
 
-    @validator("include")
+    @field_validator("include")
+    @classmethod
     def validate_include_options(cls, v: List[str]) -> List[str]:
         valid_options = {"stats", "abilities", "builds", "history"}
         invalid = set(v) - valid_options
@@ -114,7 +115,8 @@ class GetItemDataInput(BaseModel):
         default=["stats", "cost"], description="Data sections to include"
     )
 
-    @validator("include")
+    @field_validator("include")
+    @classmethod
     def validate_include_options(cls, v: List[str]) -> List[str]:
         valid_options = {"stats", "components", "passive", "cost"}
         invalid = set(v) - valid_options
@@ -158,7 +160,7 @@ class GetChampionDataTool(MCPTool):
     def _get_champion_service(self):
         """Lazy initialization of champion service to avoid circular imports"""
         if self._champion_service is None:
-            from .services.champion_service import ChampionService
+            from ..services.champion_service import ChampionService
             self._champion_service = ChampionService()
         return self._champion_service
 
@@ -193,11 +195,19 @@ class GetChampionDataTool(MCPTool):
         """Execute champion data retrieval using ChampionService"""
         # Use the champion service to get actual data
         champion_service = self._get_champion_service()
-        return await champion_service.get_champion_data(
+        result = await champion_service.get_champion_data(
             champion=params.get("champion"),
             patch=params.get("patch", "current"),
             include=params.get("include", ["stats", "abilities"])
         )
+        
+        # Transform the service response to match the expected API
+        # The service returns "name" but the API should return "champion" for consistency
+        if "name" in result:
+            result["champion"] = result["name"]
+            # Keep both for backwards compatibility during development
+        
+        return result
 
 
 class GetAbilityDetailsTool(MCPTool):

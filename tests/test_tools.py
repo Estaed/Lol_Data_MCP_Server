@@ -6,7 +6,7 @@ Test suite to verify all MCP tools validate inputs and return structured outputs
 
 import pytest
 import asyncio
-from src.tools import (
+from src.mcp_server.tools import (
     tool_registry,
     GetChampionDataTool,
     GetAbilityDetailsTool,

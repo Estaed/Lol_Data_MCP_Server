@@ -231,7 +231,7 @@ class TestChampionServiceIntegration:
     @pytest.mark.asyncio
     async def test_service_integration_with_tools(self):
         """Test that ChampionService integrates properly with MCP tools"""
-        from src.tools import GetChampionDataTool
+        from src.mcp_server.tools import GetChampionDataTool
         
         tool = GetChampionDataTool()
         result = await tool.execute({"champion": "Taric"})
@@ -243,7 +243,7 @@ class TestChampionServiceIntegration:
     @pytest.mark.asyncio
     async def test_tool_error_handling(self):
         """Test that MCP tool properly handles service errors"""
-        from src.tools import GetChampionDataTool
+        from src.mcp_server.tools import GetChampionDataTool
         
         tool = GetChampionDataTool()
         
