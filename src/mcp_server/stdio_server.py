@@ -9,16 +9,38 @@ for integration with Cursor and other MCP clients that expect stdio protocol.
 import asyncio
 import json
 import sys
+import os
 from pathlib import Path
 
 # Add parent directories to path for proper imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent))
+current_dir = Path(__file__).resolve().parent
+src_dir = current_dir.parent
+project_root = src_dir.parent
 
-from mcp_server.mcp_handler import MCPHandler
+sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(src_dir))
+
+try:
+    from mcp_server.mcp_handler import MCPHandler
+except ImportError:
+    # Fallback import path
+    from src.mcp_server.mcp_handler import MCPHandler
+
 import structlog
 
-# Configure structured logging to stderr to avoid interfering with stdio protocol
+# Configure logging to go to stderr with minimal output for MCP compliance
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.processors.JSONRenderer()
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=True,
+)
+
 logger = structlog.get_logger()
 
 
@@ -36,20 +58,25 @@ class StdioMCPServer:
 
     async def initialize(self):
         """Initialize the MCP handler."""
-        self.handler = MCPHandler()
-        await self.handler.initialize()
-        logger.info("Stdio MCP Server initialized", file=sys.stderr)
+        try:
+            self.handler = MCPHandler()
+            await self.handler.initialize()
+            # Only log critical startup info to stderr
+            print("Stdio MCP Server initialized", file=sys.stderr)
+        except Exception as e:
+            print(f"Failed to initialize MCP handler: {e}", file=sys.stderr)
+            raise
 
     async def run(self):
         """Run the stdio MCP server."""
         await self.initialize()
         
-        logger.info("Starting stdio MCP server for Cursor integration", file=sys.stderr)
+        print("Starting stdio MCP server for Cursor integration", file=sys.stderr)
         
         try:
             while self.running:
                 try:
-                    # Read from stdin
+                    # Read from stdin with proper async handling
                     line = await asyncio.get_event_loop().run_in_executor(
                         None, sys.stdin.readline
                     )
@@ -65,23 +92,22 @@ class StdioMCPServer:
                     # Parse JSON message
                     try:
                         message = json.loads(line)
-                        logger.debug("Received MCP message", message=message, file=sys.stderr)
                     except json.JSONDecodeError as e:
-                        logger.error("Invalid JSON received", error=str(e), file=sys.stderr)
+                        print(f"Invalid JSON received: {e}", file=sys.stderr)
                         continue
                     
                     # Process message
-                    response = await self.handler.handle_message(message)
-                    
-                    # Send response to stdout
-                    if response:
-                        print(json.dumps(response))
-                        sys.stdout.flush()
-                        logger.debug("Sent MCP response", response=response, file=sys.stderr)
+                    if self.handler:
+                        response = await self.handler.handle_message(message)
+                        
+                        # Send response to stdout with proper formatting
+                        if response:
+                            response_json = json.dumps(response, ensure_ascii=False)
+                            print(response_json, flush=True)
                 
                 except Exception as e:
-                    logger.error("Error processing message", error=str(e), file=sys.stderr)
-                    # Send error response
+                    print(f"Error processing message: {e}", file=sys.stderr)
+                    # Send proper error response
                     error_response = {
                         "jsonrpc": "2.0",
                         "error": {
@@ -90,28 +116,35 @@ class StdioMCPServer:
                             "data": str(e),
                         },
                     }
-                    print(json.dumps(error_response))
-                    sys.stdout.flush()
+                    print(json.dumps(error_response), flush=True)
         
         except KeyboardInterrupt:
-            logger.info("Server stopped by user", file=sys.stderr)
+            print("Server stopped by user", file=sys.stderr)
         except Exception as e:
-            logger.error("Server error", error=str(e), file=sys.stderr)
+            print(f"Server error: {e}", file=sys.stderr)
         finally:
             await self.cleanup()
 
     async def cleanup(self):
         """Cleanup resources."""
-        if self.handler:
-            await self.handler.cleanup()
-        logger.info("Stdio MCP Server shutdown complete", file=sys.stderr)
+        try:
+            if self.handler:
+                await self.handler.cleanup()
+            print("Stdio MCP Server shutdown complete", file=sys.stderr)
+        except Exception as e:
+            print(f"Cleanup error: {e}", file=sys.stderr)
 
 
 async def main():
     """Main function to start the stdio MCP server."""
-    server = StdioMCPServer()
-    await server.run()
+    try:
+        server = StdioMCPServer()
+        await server.run()
+    except Exception as e:
+        print(f"Failed to start MCP server: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
+    # Ensure we're running with proper setup
     asyncio.run(main()) 
