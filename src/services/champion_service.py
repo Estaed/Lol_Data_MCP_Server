@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 import structlog
 
 from pydantic import BaseModel, Field, ValidationError
-from ..mcp_server.tools import GetChampionDataInput
+from src.mcp_server.tools import GetChampionDataInput
 
 
 # Response Models
