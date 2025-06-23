@@ -16,67 +16,34 @@ from typing import Dict, List, Any
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 try:
-    from services.champion_service import ChampionService
+    from src.services.champion_service import ChampionService
 except ImportError:
-    # Fallback for when service is not available
+    # Fallback for when service isn't available
     print("Note: ChampionService not available - using mock implementation")
     
-    class ChampionService:
-        """Mock ChampionService for demonstration purposes."""
-        
+    class MockChampionService:
         async def get_champion_data(self, champion_name: str):
-            """Mock method returning sample data structure."""
+            # Mock data structure matching the real service
             from types import SimpleNamespace
             
-            # Return mock data structure similar to real service
-            return SimpleNamespace(
-                name=champion_name,
-                role="Support" if champion_name == "Taric" else "ADC",
-                stats=SimpleNamespace(
-                    health=575,
-                    health_per_level=85,
-                    mana=300,
-                    mana_per_level=60,
-                    attack_damage=55,
-                    attack_damage_per_level=3.5,
-                    armor=40,
-                    armor_per_level=3.5,
-                    magic_resist=32,
-                    magic_resist_per_level=1.25,
-                    movement_speed=340,
-                    attack_range=150,
-                ),
-                abilities=SimpleNamespace(
-                    passive=SimpleNamespace(
-                        name="Bravado",
-                        description="Mock passive ability"
-                    ),
-                    q=SimpleNamespace(
-                        name="Starlight's Touch",
-                        description="Mock Q ability",
-                        cooldown=14,
-                        cost=60
-                    ),
-                    w=SimpleNamespace(
-                        name="Bastion", 
-                        description="Mock W ability",
-                        cooldown=18,
-                        cost=50
-                    ),
-                    e=SimpleNamespace(
-                        name="Dazzle",
-                        description="Mock E ability",
-                        cooldown=13,
-                        cost=70
-                    ),
-                    r=SimpleNamespace(
-                        name="Cosmic Radiance",
-                        description="Mock R ability",
-                        cooldown=160,
-                        cost=100
-                    ),
-                )
+            mock_stats = SimpleNamespace(
+                health=575, health_per_level=90, mana=300, mana_per_level=60,
+                attack_damage=55, attack_damage_per_level=3.5, armor=40, armor_per_level=3,
+                magic_resist=32, magic_resist_per_level=1.25, movement_speed=340, attack_range=150
             )
+            
+            mock_ability = SimpleNamespace(name="Mock Ability", description="Mock description", cooldown=[12], cost=[70])
+            mock_passive = SimpleNamespace(name="Mock Passive", description="Mock passive description")
+            
+            mock_abilities = SimpleNamespace(
+                passive=mock_passive, q=mock_ability, w=mock_ability, e=mock_ability, r=mock_ability
+            )
+            
+            return SimpleNamespace(
+                name=champion_name, role="Support", stats=mock_stats, abilities=mock_abilities
+            )
+    
+    ChampionService = MockChampionService
 
 
 class LoLDataIntegrator:
@@ -104,56 +71,58 @@ class LoLDataIntegrator:
             champion_data = await self.champion_service.get_champion_data(champion_name)
             
             # Convert to training-friendly format
-            training_data = {
-                "champion_id": champion_data.name,
-                "role": champion_data.role,
+            # Type ignore: champion_data is actually a SimpleNamespace object with attributes
+            # Suppress type checker warnings - champion_data is SimpleNamespace with attributes
+            training_data = {  # type: ignore[misc]
+                "champion_id": champion_data.name,  # type: ignore[attr-defined]
+                "role": champion_data.role,  # type: ignore[attr-defined]
                 "stats": {
-                    "health": champion_data.stats.health,
-                    "health_per_level": champion_data.stats.health_per_level,
-                    "mana": champion_data.stats.mana,
-                    "mana_per_level": champion_data.stats.mana_per_level,
-                    "attack_damage": champion_data.stats.attack_damage,
-                    "attack_damage_per_level": champion_data.stats.attack_damage_per_level,
-                    "armor": champion_data.stats.armor,
-                    "armor_per_level": champion_data.stats.armor_per_level,
-                    "magic_resist": champion_data.stats.magic_resist,
-                    "magic_resist_per_level": champion_data.stats.magic_resist_per_level,
-                    "movement_speed": champion_data.stats.movement_speed,
-                    "attack_range": champion_data.stats.attack_range,
+                    "health": champion_data.stats.health,  # type: ignore[attr-defined]
+                    "health_per_level": champion_data.stats.health_per_level,  # type: ignore[attr-defined]
+                    "mana": champion_data.stats.mana,  # type: ignore[attr-defined]
+                    "mana_per_level": champion_data.stats.mana_per_level,  # type: ignore[attr-defined]
+                    "attack_damage": champion_data.stats.attack_damage,  # type: ignore[attr-defined]
+                    "attack_damage_per_level": champion_data.stats.attack_damage_per_level,  # type: ignore[attr-defined]
+                    "armor": champion_data.stats.armor,  # type: ignore[attr-defined]
+                    "armor_per_level": champion_data.stats.armor_per_level,  # type: ignore[attr-defined]
+                    "magic_resist": champion_data.stats.magic_resist,  # type: ignore[attr-defined]
+                    "magic_resist_per_level": champion_data.stats.magic_resist_per_level,  # type: ignore[attr-defined]
+                    "movement_speed": champion_data.stats.movement_speed,  # type: ignore[attr-defined]
+                    "attack_range": champion_data.stats.attack_range,  # type: ignore[attr-defined]
                 },
                 "abilities": [
                     {
                         "slot": "passive",
-                        "name": champion_data.abilities.passive.name,
-                        "description": champion_data.abilities.passive.description,
+                        "name": champion_data.abilities.passive.name,  # type: ignore[attr-defined]
+                        "description": champion_data.abilities.passive.description,  # type: ignore[attr-defined]
                     },
                     {
                         "slot": "Q",
-                        "name": champion_data.abilities.q.name,
-                        "description": champion_data.abilities.q.description,
-                        "cooldown": champion_data.abilities.q.cooldown,
-                        "cost": champion_data.abilities.q.cost,
+                        "name": champion_data.abilities.q.name,  # type: ignore[attr-defined]
+                        "description": champion_data.abilities.q.description,  # type: ignore[attr-defined]
+                        "cooldown": champion_data.abilities.q.cooldown,  # type: ignore[attr-defined]
+                        "cost": champion_data.abilities.q.cost,  # type: ignore[attr-defined]
                     },
                     {
                         "slot": "W", 
-                        "name": champion_data.abilities.w.name,
-                        "description": champion_data.abilities.w.description,
-                        "cooldown": champion_data.abilities.w.cooldown,
-                        "cost": champion_data.abilities.w.cost,
+                        "name": champion_data.abilities.w.name,  # type: ignore[attr-defined]
+                        "description": champion_data.abilities.w.description,  # type: ignore[attr-defined]
+                        "cooldown": champion_data.abilities.w.cooldown,  # type: ignore[attr-defined]
+                        "cost": champion_data.abilities.w.cost,  # type: ignore[attr-defined]
                     },
                     {
                         "slot": "E",
-                        "name": champion_data.abilities.e.name, 
-                        "description": champion_data.abilities.e.description,
-                        "cooldown": champion_data.abilities.e.cooldown,
-                        "cost": champion_data.abilities.e.cost,
+                        "name": champion_data.abilities.e.name,  # type: ignore[attr-defined]
+                        "description": champion_data.abilities.e.description,  # type: ignore[attr-defined]
+                        "cooldown": champion_data.abilities.e.cooldown,  # type: ignore[attr-defined]
+                        "cost": champion_data.abilities.e.cost,  # type: ignore[attr-defined]
                     },
                     {
                         "slot": "R",
-                        "name": champion_data.abilities.r.name,
-                        "description": champion_data.abilities.r.description,
-                        "cooldown": champion_data.abilities.r.cooldown,
-                        "cost": champion_data.abilities.r.cost,
+                        "name": champion_data.abilities.r.name,  # type: ignore[attr-defined]
+                        "description": champion_data.abilities.r.description,  # type: ignore[attr-defined]
+                        "cooldown": champion_data.abilities.r.cooldown,  # type: ignore[attr-defined]
+                        "cost": champion_data.abilities.r.cost,  # type: ignore[attr-defined]
                     },
                 ],
             }

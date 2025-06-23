@@ -1,0 +1,53 @@
+{
+  "champion_id": "Taric",
+  "role": "Support",
+  "stats": {
+    "health": 575,
+    "health_per_level": 85,
+    "mana": 300,
+    "mana_per_level": 60,
+    "attack_damage": 55,
+    "attack_damage_per_level": 3.5,
+    "armor": 40,
+    "armor_per_level": 3.5,
+    "magic_resist": 32,
+    "magic_resist_per_level": 1.25,
+    "movement_speed": 340,
+    "attack_range": 150
+  },
+  "abilities": [
+    {
+      "slot": "passive",
+      "name": "Bravado",
+      "description": "Mock passive ability"
+    },
+    {
+      "slot": "Q",
+      "name": "Starlight's Touch",
+      "description": "Mock Q ability",
+      "cooldown": 14,
+      "cost": 60
+    },
+    {
+      "slot": "W",
+      "name": "Bastion",
+      "description": "Mock W ability",
+      "cooldown": 18,
+      "cost": 50
+    },
+    {
+      "slot": "E",
+      "name": "Dazzle",
+      "description": "Mock E ability",
+      "cooldown": 13,
+      "cost": 70
+    },
+    {
+      "slot": "R",
+      "name": "Cosmic Radiance",
+      "description": "Mock R ability",
+      "cooldown": 160,
+      "cost": 100
+    }
+  ]
+}
