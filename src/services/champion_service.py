@@ -232,7 +232,7 @@ class ChampionService:
         self, 
         champion: str, 
         patch: str = "current", 
-        include: list[str] = None
+        include: Optional[list[str]] = None
     ) -> Dict[str, Any]:
         """
         Retrieve comprehensive champion data
