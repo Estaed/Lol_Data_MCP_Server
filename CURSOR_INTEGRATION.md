@@ -103,4 +103,56 @@ If you encounter issues:
 ---
 
 **Status:** ✅ Ready for basic integration and testing
-**Last Updated:** June 22, 2025 
+**Last Updated:** June 22, 2025
+
+**🚨 IMPORTANT: Unicode Path Issue Fix**
+
+Due to PowerShell Unicode handling issues with Turkish characters (`Masaüstü`), use this updated configuration:
+
+## Fixed Cursor Configuration
+
+Add this to your Cursor settings (`.cursor-settings/config.json`):
+
+```json
+{
+  "mcpServers": {
+    "lol-data": {
+      "command": "cmd",
+      "args": ["/c", "cd /d \"C:\\Users\\tarik\\OneDrive\\Masaüstü\\Python\\Reinforcement Learning Projects\\Project Taric\\Lol_Data_MCP_Server\" && venv\\Scripts\\activate && python -m src.mcp_server.stdio_server"]
+    }
+  }
+}
+```
+
+**Alternative Configuration (PowerShell with UTF-8)**:
+```json
+{
+  "mcpServers": {
+    "lol-data": {
+      "command": "powershell",
+      "args": ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; cd 'C:\\Users\\tarik\\OneDrive\\Masaüstü\\Python\\Reinforcement Learning Projects\\Project Taric\\Lol_Data_MCP_Server'; .\\venv\\Scripts\\Activate.ps1; python -m src.mcp_server.stdio_server"]
+    }
+  }
+}
+```
+
+## Original Configuration (Reference)
+
+```json
+{
+  "mcpServers": {
+    "lol-data": {
+      "command": "powershell",
+      "args": ["-Command", "& { cd 'C:\\Users\\tarik\\OneDrive\\Masaüstü\\Python\\Reinforcement Learning Projects\\Project Taric\\Lol_Data_MCP_Server'; .\\venv\\Scripts\\Activate.ps1; python -m src.mcp_server.stdio_server }"]
+    }
+  }
+}
+```
+
+## Testing the Fix
+
+After updating the configuration:
+
+1. Restart Cursor completely
+2. Check MCP server status in Cursor settings
+3. The server should show as connected with 7 tools available 

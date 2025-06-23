@@ -174,3 +174,5 @@ docs/generated/
 # Test artifacts
 test_results/
 test_data/generated/ 
+
+.cursorrules
