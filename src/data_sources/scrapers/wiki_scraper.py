@@ -37,8 +37,8 @@ class WikiScraper:
     - LoL Wiki URL handling
     """
     
-    BASE_URL = "https://leagueoflegends.fandom.com"
-    CHAMPION_URL_TEMPLATE = "/wiki/{champion_name}"
+    BASE_URL = "https://wiki.leagueoflegends.com/en-us"
+    CHAMPION_URL_TEMPLATE = "/{champion_name}"
     
     def __init__(
         self,
@@ -228,8 +228,8 @@ class WikiScraper:
             True if connection successful, False otherwise
         """
         try:
-            url = urljoin(self.BASE_URL, "/wiki/League_of_Legends_Wiki")
-            response = await self._make_request(url)
+            # Test connection using the base URL
+            response = await self._make_request(self.BASE_URL)
             self.logger.info("Wiki connection test successful")
             return True
         except Exception as e:
