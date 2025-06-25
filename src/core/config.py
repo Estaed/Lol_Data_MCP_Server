@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
+from .environment_loader import EnvironmentLoader
 
 
 class Environment(str, Enum):
@@ -164,50 +165,57 @@ class Settings(BaseSettings):
             except ValueError:
                 environment = Environment.DEVELOPMENT
         
-        # Load base configuration
+        # Load base configuration with environment variable substitution
         base_config_path = config_dir / "server_config.yaml"
         config_data = {}
+        loader = EnvironmentLoader()
         
         if base_config_path.exists():
             try:
-                with open(base_config_path, 'r', encoding='utf-8') as f:
-                    config_data = yaml.safe_load(f) or {}
+                config_data = loader.load_yaml_with_env(base_config_path)
             except Exception as e:
                 # Fallback to defaults if config file can't be loaded
                 print(f"Warning: Could not load base config file {base_config_path}: {e}")
         
-        # Load data sources configuration
+        # Load data sources configuration with environment variables
         data_sources_path = config_dir / "data_sources.yaml"
         if data_sources_path.exists():
             try:
-                with open(data_sources_path, 'r', encoding='utf-8') as f:
-                    data_sources_config = yaml.safe_load(f) or {}
-                    if 'data_sources' not in config_data:
-                        config_data['data_sources'] = {}
-                    config_data['data_sources']['data_sources_config'] = data_sources_config
+                data_sources_config = loader.load_yaml_with_env(data_sources_path)
+                # Merge data sources config into main config
+                if 'data_sources' not in config_data:
+                    config_data['data_sources'] = {}
+                
+                # Extract useful values from data_sources.yaml
+                if 'sources' in data_sources_config:
+                    lol_wiki = data_sources_config['sources'].get('lol_wiki', {})
+                    if 'base_url' in lol_wiki:
+                        config_data['data_sources']['wiki_base_url'] = lol_wiki['base_url']
+                    if 'rate_limit_seconds' in lol_wiki:
+                        config_data['data_sources']['wiki_rate_limit'] = lol_wiki['rate_limit_seconds']
+                        
+                config_data['data_sources']['data_sources_config'] = data_sources_config
             except Exception as e:
                 print(f"Warning: Could not load data sources config file {data_sources_path}: {e}")
         
-        # Load MCP tools configuration
+        # Load MCP tools configuration with environment variables
         mcp_tools_path = config_dir / "mcp_tools.yaml"
         if mcp_tools_path.exists():
             try:
-                with open(mcp_tools_path, 'r', encoding='utf-8') as f:
-                    mcp_tools_config = yaml.safe_load(f) or {}
-                    if 'data_sources' not in config_data:
-                        config_data['data_sources'] = {}
-                    config_data['data_sources']['mcp_tools_config'] = mcp_tools_config
+                mcp_tools_config = loader.load_yaml_with_env(mcp_tools_path)
+                if 'data_sources' not in config_data:
+                    config_data['data_sources'] = {}
+                config_data['data_sources']['mcp_tools_config'] = mcp_tools_config
             except Exception as e:
                 print(f"Warning: Could not load MCP tools config file {mcp_tools_path}: {e}")
         
-        # Load environment-specific configuration
+        # Load environment-specific configuration with environment variables
         env_config_path = config_dir / f"{environment.value}_config.yaml"
         if env_config_path.exists():
             try:
-                with open(env_config_path, 'r', encoding='utf-8') as f:
-                    env_config = yaml.safe_load(f) or {}
-                    # Merge environment-specific config
-                    config_data = _deep_merge(config_data, env_config)
+                env_config = loader.load_yaml_with_env(env_config_path)
+                # Merge environment-specific config
+                config_data = _deep_merge(config_data, env_config)
             except Exception as e:
                 print(f"Warning: Could not load environment config file {env_config_path}: {e}")
         

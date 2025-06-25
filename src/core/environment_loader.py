@@ -43,7 +43,7 @@ class EnvironmentLoader:
             return value
     
     @classmethod
-    def _substitute_string(cls, text: str) -> Union[str, int, float, bool]:
+    def _substitute_string(cls, text: str) -> Union[str, int, float, bool, list]:
         """
         Substitute environment variables in a string value.
         
@@ -76,7 +76,7 @@ class EnvironmentLoader:
         return cls._convert_type(result)
     
     @classmethod
-    def _convert_type(cls, value: str) -> Union[str, int, float, bool]:
+    def _convert_type(cls, value: str) -> Union[str, int, float, bool, list]:
         """
         Convert string value to appropriate Python type.
         
@@ -109,6 +109,10 @@ class EnvironmentLoader:
                 return json.loads(value)
             except (json.JSONDecodeError, ValueError):
                 pass
+        
+        # Handle simple wildcard cases
+        if value == '*':
+            return ['*']
         
         # Return as string if no conversion applies
         return value
