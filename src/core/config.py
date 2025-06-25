@@ -73,6 +73,10 @@ class DataSourcesConfig(BaseSettings):
     riot_api_key: Optional[str] = Field(default=None, description="Riot API key")
     riot_api_rate_limit: float = Field(default=0.5, description="Riot API rate limit")
     
+    # Additional data sources configuration
+    data_sources_config: Optional[Dict[str, Any]] = Field(default=None, description="Data sources config from YAML")
+    mcp_tools_config: Optional[Dict[str, Any]] = Field(default=None, description="MCP tools config from YAML")
+    
     class Config:
         env_prefix = "DATA_SOURCES_"
 
@@ -172,6 +176,30 @@ class Settings(BaseSettings):
                 # Fallback to defaults if config file can't be loaded
                 print(f"Warning: Could not load base config file {base_config_path}: {e}")
         
+        # Load data sources configuration
+        data_sources_path = config_dir / "data_sources.yaml"
+        if data_sources_path.exists():
+            try:
+                with open(data_sources_path, 'r', encoding='utf-8') as f:
+                    data_sources_config = yaml.safe_load(f) or {}
+                    if 'data_sources' not in config_data:
+                        config_data['data_sources'] = {}
+                    config_data['data_sources']['data_sources_config'] = data_sources_config
+            except Exception as e:
+                print(f"Warning: Could not load data sources config file {data_sources_path}: {e}")
+        
+        # Load MCP tools configuration
+        mcp_tools_path = config_dir / "mcp_tools.yaml"
+        if mcp_tools_path.exists():
+            try:
+                with open(mcp_tools_path, 'r', encoding='utf-8') as f:
+                    mcp_tools_config = yaml.safe_load(f) or {}
+                    if 'data_sources' not in config_data:
+                        config_data['data_sources'] = {}
+                    config_data['data_sources']['mcp_tools_config'] = mcp_tools_config
+            except Exception as e:
+                print(f"Warning: Could not load MCP tools config file {mcp_tools_path}: {e}")
+        
         # Load environment-specific configuration
         env_config_path = config_dir / f"{environment.value}_config.yaml"
         if env_config_path.exists():
@@ -224,6 +252,7 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
         case_sensitive = False
         env_prefix = "LOL_MCP_"
+        extra = "allow"  # Allow extra fields for dynamic config loading
 
 
 def _deep_merge(base_dict: Dict[str, Any], override_dict: Dict[str, Any]) -> Dict[str, Any]:

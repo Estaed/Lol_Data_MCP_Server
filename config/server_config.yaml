@@ -24,6 +24,7 @@ data_sources:
   wiki_base_url: "https://wiki.leagueoflegends.com"
   wiki_rate_limit: 1.0
   riot_api_enabled: true
+  riot_api_key: "${DATA_SOURCES_RIOT_API_KEY:-}"
   riot_api_rate_limit: 0.5
     
 logging:

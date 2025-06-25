@@ -264,7 +264,7 @@ data_sources:
     
     wiki_scraper:
       enabled: true
-      base_url: "https://leagueoflegends.fandom.com"
+      base_url: "https://wiki.leagueoflegends.com"
       rate_limit:
         requests_per_minute: 30
     

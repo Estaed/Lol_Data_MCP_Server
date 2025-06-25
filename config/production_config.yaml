@@ -7,13 +7,13 @@ server:
   port: 8080
   
 database:
-  url: "postgresql://lol_prod:secure_pass@db.example.com:5432/lol_data_prod"
+  url: "${DATABASE_URL:-postgresql://lol_user:lol_pass@localhost:5432/lol_data_prod}"
   echo: false
   pool_size: 20
   max_overflow: 40
   
 redis:
-  url: "redis://redis.example.com:6379/0"
+  url: "${REDIS_URL:-redis://localhost:6379/0}"
   max_connections: 20
   
 logging:
@@ -29,4 +29,5 @@ cache:
 
 security:
   rate_limit_per_minute: 1000
-  allowed_origins: ["https://example.com", "https://app.example.com"] 
+  allowed_origins: "${ALLOWED_ORIGINS:-[\"*\"]}"
+  api_key: "${API_KEY:-}" 
