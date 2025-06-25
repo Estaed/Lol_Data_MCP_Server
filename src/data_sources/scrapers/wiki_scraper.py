@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any
 from urllib.parse import urljoin, quote
 
 import httpx
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 
 class WikiScraperError(Exception):
@@ -235,6 +235,259 @@ class WikiScraper:
         except Exception as e:
             self.logger.error(f"Wiki connection test failed: {e}")
             return False
+
+    def find_champion_data_sections(self, soup: BeautifulSoup) -> Dict[str, Optional[Tag]]:
+        """
+        Find and identify different data sections on a champion page.
+        
+        Args:
+            soup: BeautifulSoup object of the champion page
+            
+        Returns:
+            Dictionary mapping section names to BeautifulSoup elements:
+            - 'stats': Champion statistics section (infobox)
+            - 'abilities': Abilities section 
+            - 'overview': General champion overview
+            None values indicate missing sections
+        """
+        self.logger.info("Finding champion data sections")
+        
+        sections = {
+            'stats': self._find_stats_section(soup),
+            'abilities': self._find_abilities_section(soup),
+            'overview': self._find_overview_section(soup)
+        }
+        
+        # Log what was found
+        found_sections = [name for name, section in sections.items() if section is not None]
+        missing_sections = [name for name, section in sections.items() if section is None]
+        
+        self.logger.info(f"Found sections: {found_sections}")
+        if missing_sections:
+            self.logger.warning(f"Missing sections: {missing_sections}")
+            
+        return sections
+    
+    def _find_stats_section(self, soup: BeautifulSoup) -> Optional[Tag]:
+        """
+        Find the champion stats infobox section.
+        
+        Args:
+            soup: BeautifulSoup object of the champion page
+            
+        Returns:
+            BeautifulSoup element containing stats, or None if not found
+        """
+        self.logger.debug("Looking for stats section")
+        
+        # Primary approach: Look for infobox with champion stats class
+        def has_stats_classes(class_list):
+            if not class_list:
+                return False
+            return 'infobox' in class_list and 'type-champion-stats' in class_list
+        
+        stats_infobox = soup.find('div', class_=has_stats_classes)
+        
+        if stats_infobox and isinstance(stats_infobox, Tag):
+            self.logger.debug("Found stats section via type-champion-stats infobox")
+            return stats_infobox
+        
+        # Fallback 1: Look for any infobox containing stat-like content
+        infoboxes = soup.find_all('div', class_='infobox')
+        for infobox in infoboxes:
+            if isinstance(infobox, Tag):
+                text = infobox.get_text().lower()
+                # Check for common stat abbreviations
+                if any(stat in text for stat in ['hp', 'mp', 'ar', 'ad', 'mr', 'attack damage']):
+                    self.logger.debug("Found stats section via infobox content analysis")
+                    return infobox
+        
+        # Fallback 2: Look for tables containing stats
+        tables = soup.find_all('table')
+        for table in tables:
+            if isinstance(table, Tag):
+                text = table.get_text().lower()
+                if 'base statistics' in text or 'champion stats' in text:
+                    self.logger.debug("Found stats section via table content")
+                    return table
+        
+        self.logger.warning("Could not find stats section")
+        return None
+    
+    def _find_abilities_section(self, soup: BeautifulSoup) -> Optional[Tag]:
+        """
+        Find the abilities section on the champion page.
+        
+        Args:
+            soup: BeautifulSoup object of the champion page
+            
+        Returns:
+            BeautifulSoup element containing abilities, or None if not found
+        """
+        self.logger.debug("Looking for abilities section")
+        
+        # Primary approach: Look for "Abilities" heading and get following content
+        def contains_ability(text):
+            if not text:
+                return False
+            return 'abilit' in text.lower()
+        
+        abilities_span = soup.find('span', class_='mw-headline', string=contains_ability)
+        
+        if abilities_span and isinstance(abilities_span, Tag):
+            # Find the parent heading element
+            heading = abilities_span.find_parent(['h1', 'h2', 'h3', 'h4'])
+            if heading and isinstance(heading, Tag):
+                # Get the section after this heading until the next heading
+                section_content = []
+                current = heading.next_sibling
+                
+                while current:
+                    if isinstance(current, Tag) and current.name in ['h1', 'h2', 'h3', 'h4']:
+                        # Stop at next heading of same or higher level
+                        break
+                    if isinstance(current, Tag):
+                        section_content.append(current)
+                    current = current.next_sibling
+                
+                if section_content:
+                    self.logger.debug("Found abilities section via mw-headline")
+                    # Create a wrapper div containing all abilities content
+                    wrapper = soup.new_tag('div')
+                    wrapper['class'] = 'abilities-section'
+                    for element in section_content:
+                        wrapper.append(element.extract())
+                    return wrapper
+        
+        # Fallback 1: Look for any heading containing "ability"
+        ability_headers = soup.find_all(['h1', 'h2', 'h3', 'h4'])
+        
+        for header in ability_headers:
+            if isinstance(header, Tag) and header.string and 'abilit' in header.string.lower():
+                # Get content after this header
+                content = []
+                current = header.next_sibling
+                while current and not (isinstance(current, Tag) and current.name in ['h1', 'h2', 'h3']):
+                    if isinstance(current, Tag):
+                        content.append(current)
+                    current = current.next_sibling
+                
+                if content:
+                    self.logger.debug("Found abilities section via header search")
+                    wrapper = soup.new_tag('div')
+                    wrapper['class'] = 'abilities-section-fallback'
+                    for element in content:
+                        wrapper.append(element.extract())
+                    return wrapper
+        
+        # Fallback 2: Look for divs/sections with ability-related classes or content
+        def has_ability_classes(class_list):
+            if not class_list:
+                return False
+            return any(term in ' '.join(class_list).lower() for term in ['ability', 'skill'])
+        
+        ability_divs = soup.find_all('div', class_=has_ability_classes)
+        
+        if ability_divs:
+            for div in ability_divs:
+                if isinstance(div, Tag):
+                    self.logger.debug("Found abilities section via class-based search")
+                    return div
+        
+        self.logger.warning("Could not find abilities section")
+        return None
+    
+    def _find_overview_section(self, soup: BeautifulSoup) -> Optional[Tag]:
+        """
+        Find the champion overview/summary section.
+        
+        Args:
+            soup: BeautifulSoup object of the champion page
+            
+        Returns:
+            BeautifulSoup element containing overview, or None if not found
+        """
+        self.logger.debug("Looking for overview section")
+        
+        # Look for champion description/overview paragraphs near the top
+        # Usually the first few paragraphs after the infobox
+        main_content = soup.find('div', {'id': 'mw-content-text'})
+        if main_content and isinstance(main_content, Tag):
+            # Find first substantial paragraph
+            paragraphs = main_content.find_all('p')
+            for p in paragraphs:
+                if isinstance(p, Tag):
+                    text = p.get_text().strip()
+                    if len(text) > 50:  # Substantial content
+                        self.logger.debug("Found overview section via first substantial paragraph")
+                        return p
+        
+        # Fallback: look for any div with summary/description content
+        def has_summary_classes(class_list):
+            if not class_list:
+                return False
+            return any(term in ' '.join(class_list).lower() for term in ['summary', 'description', 'overview'])
+        
+        summary_divs = soup.find_all('div', class_=has_summary_classes)
+        
+        if summary_divs:
+            for div in summary_divs:
+                if isinstance(div, Tag):
+                    self.logger.debug("Found overview section via class-based search")
+                    return div
+        
+        self.logger.debug("No specific overview section found")
+        return None
+    
+    def _validate_page_structure(self, soup: BeautifulSoup) -> Dict[str, bool]:
+        """
+        Validate that expected sections exist and contain meaningful data.
+        
+        Args:
+            soup: BeautifulSoup object of the champion page
+            
+        Returns:
+            Dictionary mapping section names to validation results
+        """
+        self.logger.debug("Validating page structure")
+        
+        sections = self.find_champion_data_sections(soup)
+        validation = {}
+        
+        # Validate stats section
+        stats = sections.get('stats')
+        if stats:
+            stats_text = stats.get_text().lower()
+            has_hp = 'hp' in stats_text or 'health' in stats_text
+            has_stats = any(stat in stats_text for stat in ['ad', 'armor', 'attack', 'damage'])
+            validation['stats'] = has_hp and has_stats
+        else:
+            validation['stats'] = False
+        
+        # Validate abilities section
+        abilities = sections.get('abilities')
+        if abilities:
+            abilities_text = abilities.get_text().lower()
+            has_abilities = any(term in abilities_text for term in [
+                'passive', 'cooldown', 'damage', 'ability', 'skill'
+            ])
+            validation['abilities'] = has_abilities
+        else:
+            validation['abilities'] = False
+        
+        # Validate overview section
+        overview = sections.get('overview')
+        if overview:
+            overview_text = overview.get_text().strip()
+            validation['overview'] = len(overview_text) > 30  # Has substantial content
+        else:
+            validation['overview'] = False
+        
+        # Overall page validation
+        validation['page_valid'] = any(validation.values())
+        
+        self.logger.info(f"Page validation results: {validation}")
+        return validation
 
 
 # Example usage and testing functions
