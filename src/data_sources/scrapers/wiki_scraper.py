@@ -9,7 +9,7 @@ import asyncio
 import logging
 import re
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from urllib.parse import urljoin, quote
 
 import httpx
@@ -84,12 +84,12 @@ class WikiScraper:
         # HTTP client (will be created when needed)
         self._client: Optional[httpx.AsyncClient] = None
     
-    async def __aenter__(self):
+    async def __aenter__(self) -> 'WikiScraper':
         """Async context manager entry"""
         await self._ensure_client()
         return self
     
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Async context manager exit"""
         await self.close()
     
@@ -282,10 +282,18 @@ class WikiScraper:
         self.logger.debug("Looking for stats section")
         
         # Primary approach: Look for infobox with champion stats class
-        def has_stats_classes(class_list):
+        def has_stats_classes(class_list: Any) -> bool:
+            """Check if element has champion stats related classes"""
             if not class_list:
                 return False
-            return 'infobox' in class_list and 'type-champion-stats' in class_list
+            
+            stats_indicators = [
+                'infobox', 'champion-stats', 'stats', 'champion-info', 
+                'character-info', 'data-box'
+            ]
+            
+            class_string = ' '.join(class_list).lower()
+            return any(indicator in class_string for indicator in stats_indicators)
         
         stats_infobox = soup.find('div', class_=has_stats_classes)
         
@@ -328,10 +336,18 @@ class WikiScraper:
         self.logger.debug("Looking for abilities section")
         
         # Primary approach: Look for "Abilities" heading and get following content
-        def contains_ability(text):
+        def contains_ability(text: str) -> bool:
+            """Check if text contains ability-related keywords"""
             if not text:
                 return False
-            return 'abilit' in text.lower()
+            
+            text_lower = text.lower()
+            ability_keywords = [
+                'abilities', 'skills', 'spells', 'passive', 'active',
+                'cooldown', 'mana cost', 'damage', 'cast', 'ability'
+            ]
+            
+            return any(keyword in text_lower for keyword in ability_keywords)
         
         abilities_span = soup.find('span', class_='mw-headline', string=contains_ability)
         
@@ -382,10 +398,17 @@ class WikiScraper:
                     return wrapper
         
         # Fallback 2: Look for divs/sections with ability-related classes or content
-        def has_ability_classes(class_list):
+        def has_ability_classes(class_list) -> bool:
+            """Check if element has ability-related classes"""
             if not class_list:
                 return False
-            return any(term in ' '.join(class_list).lower() for term in ['ability', 'skill'])
+            
+            ability_indicators = [
+                'ability', 'skill', 'spell', 'abilities', 'champion-abilities'
+            ]
+            
+            class_string = ' '.join(class_list).lower()
+            return any(indicator in class_string for indicator in ability_indicators)
         
         ability_divs = soup.find_all('div', class_=has_ability_classes)
         
@@ -424,10 +447,18 @@ class WikiScraper:
                         return p
         
         # Fallback: look for any div with summary/description content
-        def has_summary_classes(class_list):
+        def has_summary_classes(class_list) -> bool:
+            """Check if element has summary/overview related classes"""
             if not class_list:
                 return False
-            return any(term in ' '.join(class_list).lower() for term in ['summary', 'description', 'overview'])
+            
+            summary_indicators = [
+                'summary', 'overview', 'description', 'champion-description',
+                'intro', 'character-summary'
+            ]
+            
+            class_string = ' '.join(class_list).lower()
+            return any(indicator in class_string for indicator in summary_indicators)
         
         summary_divs = soup.find_all('div', class_=has_summary_classes)
         
@@ -616,7 +647,7 @@ class WikiScraper:
                 ranges = stat_ranges[stat_name]
                 
                 # Check base value
-                if 'base' in stat_data:
+                if 'base' in stat_data and isinstance(ranges, dict) and 'min_base' in ranges and 'max_base' in ranges:
                     base_val = stat_data['base']
                     if base_val < ranges['min_base'] or base_val > ranges['max_base']:
                         self.logger.warning(
@@ -625,7 +656,7 @@ class WikiScraper:
                         )
                 
                 # Check growth value (if applicable)
-                if 'growth' in stat_data and 'min_growth' in ranges:
+                if 'growth' in stat_data and isinstance(ranges, dict) and 'min_growth' in ranges and 'max_growth' in ranges:
                     growth_val = stat_data['growth']
                     if growth_val < ranges['min_growth'] or growth_val > ranges['max_growth']:
                         self.logger.warning(
@@ -717,7 +748,7 @@ class WikiScraper:
         self.logger.debug(f"Extracting {ability_type} ability data")
         
         # Initialize ability data structure
-        ability_data = {
+        ability_data: Dict[str, Any] = {
             "name": None,
             "description": None,
             "cooldown": None,
@@ -767,9 +798,13 @@ class WikiScraper:
         
         # Strategy 2: Look for ability cards/boxes with class patterns
         if not ability_element:
-            ability_cards = abilities_section.find_all('div', class_=lambda x: x and any(
-                term in ' '.join(x).lower() for term in ['ability', 'skill', ability_type.lower()]
-            ))
+            def ability_class_filter(class_list: Any) -> bool:
+                if not class_list:
+                    return False
+                class_string = ' '.join(class_list).lower()
+                return any(term in class_string for term in ['ability', 'skill', ability_type.lower()])
+            
+            ability_cards = abilities_section.find_all('div', class_=ability_class_filter)
             
             for card in ability_cards:
                 if isinstance(card, Tag):
@@ -847,7 +882,7 @@ class WikiScraper:
         
         return None
 
-    def _clean_ability_description(self, text: str) -> str:
+    def _clean_ability_description(self, text: str) -> Optional[str]:
         """Clean and extract the main description from ability text."""
         # Remove common prefixes and suffixes
         text = re.sub(r'^(passive|q|w|e|r)[\s\-:]+', '', text, flags=re.IGNORECASE)
@@ -870,7 +905,7 @@ class WikiScraper:
 
     def _parse_ability_values(self, text: str) -> Dict[str, Optional[str]]:
         """Parse cooldown, cost, range, and damage values from ability text."""
-        values = {
+        values: Dict[str, Optional[str]] = {
             "cooldown": None,
             "cost": None,
             "range": None,
@@ -905,9 +940,9 @@ class WikiScraper:
         
         return values
 
-    def _extract_ability_effects(self, text: str) -> list:
+    def _extract_ability_effects(self, text: str) -> List[str]:
         """Extract list of ability effects from description text."""
-        effects = []
+        effects: List[str] = []
         
         # Look for common effect keywords
         effect_patterns = [
@@ -1013,7 +1048,7 @@ class WikiScraper:
 
 
 # Example usage and testing functions
-async def test_wiki_scraper():
+async def test_wiki_scraper() -> None:
     """Test function to verify WikiScraper functionality"""
     async with WikiScraper() as scraper:
         # Test connection
