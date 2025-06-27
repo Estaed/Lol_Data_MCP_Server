@@ -334,22 +334,359 @@ class TestWikiScraper:
 
     def test_validate_stat_data(self):
         """Test stat data validation"""
-        input_stats = {
-            'hp': {'base': 645.0, 'growth': 99.0},  # Valid
-            'mp': {'base': 300.0, 'growth': 60.0},  # Valid
-            'ad': {'base': 1000.0, 'growth': 3.5},  # Invalid base (too high)
-            'movement_speed': {'base': 340.0},       # Valid, no growth expected
+        # Test valid data
+        valid_stats = {
+            'hp': {'base': 645.0, 'growth': 99.0},
+            'mp': {'base': 300.0, 'growth': 60.0}
         }
         
-        validated = self.scraper._validate_stat_data(input_stats)
+        with patch.object(self.scraper.logger, 'warning') as mock_warning:
+            result = self.scraper._validate_stat_data(valid_stats)
+            assert result == valid_stats
+            mock_warning.assert_not_called()
         
-        # Should include all stats but log warnings for invalid ones
-        assert 'hp' in validated
-        assert 'mp' in validated
-        assert 'ad' in validated  # Included despite warning
-        assert 'movement_speed' in validated
-        assert validated['hp'] == {'base': 645.0, 'growth': 99.0}
-        assert validated['ad'] == {'base': 1000.0, 'growth': 3.5}  # Warning logged but included
+        # Test outlier data (should log warnings but still return data)
+        outlier_stats = {
+            'hp': {'base': 1000.0, 'growth': 200.0},  # Too high
+            'ad': {'base': 10.0, 'growth': 1.0}       # Too low
+        }
+        
+        with patch.object(self.scraper.logger, 'warning') as mock_warning:
+            result = self.scraper._validate_stat_data(outlier_stats)
+            assert result == outlier_stats
+            # Should have logged warnings for outliers
+            assert mock_warning.call_count >= 2
+
+    # Task 2.1.4 Tests - Champion Abilities Parsing
+    def test_parse_champion_abilities_success(self):
+        """Test successful parsing of champion abilities"""
+        html = """
+        <div class="abilities-section">
+            <h3>Passive - Bravado</h3>
+            <p>Taric's next basic attack after casting a spell has 100% increased Attack Speed and deals 25-199 bonus magic damage based on champion level.</p>
+            
+            <h3>Q - Starlight's Touch</h3>
+            <p>Taric channels for up to 3 seconds, healing nearby allied champions for 30/45/60/75/90 (+0.2 AP) per second. Cooldown: 14/13/12/11/10. Mana Cost: 60/70/80/90/100. Range: 750.</p>
+            
+            <h3>W - Bastion</h3>
+            <p>Passive: Increases Armor and Magic Resistance by 10/12/14/16/18%. Active: Shields allied champion for 80/120/160/200/240 (+0.4 AP). Cooldown: 18/17/16/15/14. Mana Cost: 60. Range: 800.</p>
+            
+            <h3>E - Dazzle</h3>
+            <p>Taric shoots out a beam that deals 90/130/170/210/250 (+0.2 AP) magic damage and stuns for 1.25 seconds. Cooldown: 15/14/13/12/11. Mana Cost: 60/65/70/75/80. Range: 575.</p>
+            
+            <h3>R - Cosmic Radiance</h3>
+            <p>After 2.5 seconds, Taric and nearby allied champions become invulnerable for 2.5 seconds. Cooldown: 160/135/110. Mana Cost: 100. Range: 400.</p>
+        </div>
+        """
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        with patch.object(self.scraper, '_find_abilities_section', return_value=soup.find('div')):
+            abilities = self.scraper.parse_champion_abilities(soup)
+            
+            # Verify we got all 5 abilities
+            assert len(abilities) == 5
+            assert 'passive' in abilities
+            assert 'Q' in abilities
+            assert 'W' in abilities
+            assert 'E' in abilities
+            assert 'R' in abilities
+            
+            # Verify Passive data
+            passive = abilities['passive']
+            assert passive['name'] == 'Bravado'
+            assert 'basic attack' in passive['description'].lower()
+            assert passive['cooldown'] is None  # Passives don't have cooldowns
+            
+            # Verify Q ability data
+            q_ability = abilities['Q']
+            assert q_ability['name'] == 'Starlight\'s Touch'
+            assert 'channel' in q_ability['description'].lower()
+            assert q_ability['cooldown'] == '14/13/12/11/10'
+            assert q_ability['cost'] == '60/70/80/90/100'
+            assert q_ability['range'] == '750'
+            assert q_ability['healing'] is not None
+            
+            # Verify E ability data (damage ability)
+            e_ability = abilities['E']
+            assert e_ability['name'] == 'Dazzle'
+            assert e_ability['damage'] is not None
+            assert 'stun' in e_ability['description'].lower()
+
+    def test_parse_ability_values(self):
+        """Test parsing ability values from text"""
+        text = """
+        Taric channels and heals allies.
+        Cooldown: 14/13/12/11/10
+        Mana Cost: 60/70/80/90/100
+        Range: 750
+        Damage: 80/120/160/200/240 (+0.4 AP)
+        Healing: 30/45/60/75/90 (+0.2 AP)
+        """
+        
+        values = self.scraper._parse_ability_values(text)
+        
+        assert values['cooldown'] == '14/13/12/11/10'
+        assert values['cost'] == '60/70/80/90/100'
+        assert values['range'] == '750'
+        assert values['damage'] == '80/120/160/200/240 (+0.4 AP)'
+        assert values['healing'] == '30/45/60/75/90 (+0.2 AP)'
+
+    def test_extract_ability_effects(self):
+        """Test extracting ability effects"""
+        text = """
+        Taric channels for 3 seconds, healing allies and stunning enemies.
+        The ability shields nearby champions and increases their movement speed.
+        """
+        
+        effects = self.scraper._extract_ability_effects(text)
+        
+        # Should find healing, channeling, stunning, and shield effects
+        effect_text = ' '.join(effects).lower()
+        assert any('heal' in effect for effect in effects)
+        assert any('channel' in effect for effect in effects)
+        assert any('stun' in effect for effect in effects)
+        assert any('shield' in effect for effect in effects)
+        
+        # Should limit to 5 effects max
+        assert len(effects) <= 5
+
+    # Task 2.1.4 Tests - Champion Abilities Parsing
+    def test_parse_champion_abilities_success(self):
+        """Test successful parsing of champion abilities"""
+        html = """
+        <div class="abilities-section">
+            <h3>Passive - Bravado</h3>
+            <p>Taric's next basic attack after casting a spell has 100% increased Attack Speed and deals 25-199 bonus magic damage based on champion level.</p>
+            
+            <h3>Q - Starlight's Touch</h3>
+            <p>Taric channels for up to 3 seconds, healing nearby allied champions for 30/45/60/75/90 (+0.2 AP) per second. Cooldown: 14/13/12/11/10. Mana Cost: 60/70/80/90/100. Range: 750.</p>
+            
+            <h3>W - Bastion</h3>
+            <p>Passive: Increases Armor and Magic Resistance by 10/12/14/16/18%. Active: Shields allied champion for 80/120/160/200/240 (+0.4 AP). Cooldown: 18/17/16/15/14. Mana Cost: 60. Range: 800.</p>
+            
+            <h3>E - Dazzle</h3>
+            <p>Taric shoots out a beam that deals 90/130/170/210/250 (+0.2 AP) magic damage and stuns for 1.25 seconds. Cooldown: 15/14/13/12/11. Mana Cost: 60/65/70/75/80. Range: 575.</p>
+            
+            <h3>R - Cosmic Radiance</h3>
+            <p>After 2.5 seconds, Taric and nearby allied champions become invulnerable for 2.5 seconds. Cooldown: 160/135/110. Mana Cost: 100. Range: 400.</p>
+        </div>
+        """
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        with patch.object(self.scraper, '_find_abilities_section', return_value=soup.find('div')):
+            abilities = self.scraper.parse_champion_abilities(soup)
+            
+            # Verify we got all 5 abilities
+            assert len(abilities) == 5
+            assert 'passive' in abilities
+            assert 'Q' in abilities
+            assert 'W' in abilities
+            assert 'E' in abilities
+            assert 'R' in abilities
+            
+            # Verify Passive data
+            passive = abilities['passive']
+            assert passive['name'] == 'Bravado'
+            assert 'basic attack' in passive['description'].lower()
+            assert passive['cooldown'] is None  # Passives don't have cooldowns
+            
+            # Verify Q ability data
+            q_ability = abilities['Q']
+            assert q_ability['name'] == 'Starlight\'s Touch'
+            assert 'channel' in q_ability['description'].lower()
+            assert q_ability['cooldown'] == '14/13/12/11/10'
+            assert q_ability['cost'] == '60/70/80/90/100'
+            assert q_ability['range'] == '750'
+            assert q_ability['healing'] is not None
+            
+            # Verify E ability data (damage ability)
+            e_ability = abilities['E']
+            assert e_ability['name'] == 'Dazzle'
+            assert e_ability['damage'] is not None
+            assert 'stun' in e_ability['description'].lower()
+
+    def test_parse_champion_abilities_no_section(self):
+        """Test abilities parsing when no abilities section is found"""
+        soup = BeautifulSoup('<html><body><p>No abilities here</p></body></html>', 'html.parser')
+        
+        with patch.object(self.scraper, '_find_abilities_section', return_value=None):
+            with pytest.raises(WikiScraperError, match="Could not find abilities section"):
+                self.scraper.parse_champion_abilities(soup)
+
+    def test_extract_single_ability_success(self):
+        """Test extracting data for a single ability"""
+        html = """
+        <div>
+            <h3>Q - Starlight's Touch</h3>
+            <p>Taric channels for up to 3 seconds, healing nearby allied champions for 30/45/60/75/90 (+0.2 AP) per second.</p>
+            <p>Cooldown: 14/13/12/11/10</p>
+            <p>Mana Cost: 60/70/80/90/100</p>
+            <p>Range: 750</p>
+        </div>
+        """
+        abilities_section = BeautifulSoup(html, 'html.parser').find('div')
+        
+        ability = self.scraper._extract_single_ability(abilities_section, 'Q')
+        
+        assert ability is not None
+        assert ability['name'] == 'Starlight\'s Touch'
+        assert 'channel' in ability['description'].lower()
+        assert ability['cooldown'] == '14/13/12/11/10'
+        assert ability['cost'] == '60/70/80/90/100'
+        assert ability['range'] == '750'
+
+    def test_extract_single_ability_not_found(self):
+        """Test extracting ability when it's not found"""
+        html = """<div><p>No Q ability here</p></div>"""
+        abilities_section = BeautifulSoup(html, 'html.parser').find('div')
+        
+        with patch.object(self.scraper.logger, 'warning') as mock_warning:
+            ability = self.scraper._extract_single_ability(abilities_section, 'Q')
+            
+            assert ability is None
+            mock_warning.assert_called_with("Could not find Q ability element")
+
+    def test_extract_ability_name(self):
+        """Test extracting ability names from various formats"""
+        # Test with bold text
+        html_bold = """<div><b>Starlight's Touch</b><p>Description</p></div>"""
+        elements = [BeautifulSoup(html_bold, 'html.parser').find('div')]
+        name = self.scraper._extract_ability_name(elements, 'Q')
+        assert name == "Starlight's Touch"
+        
+        # Test with heading
+        html_heading = """<h3>Q - Dazzle</h3>"""
+        elements = [BeautifulSoup(html_heading, 'html.parser').find('h3')]
+        name = self.scraper._extract_ability_name(elements, 'Q')
+        assert name == "Dazzle"
+        
+        # Test when no name found
+        html_none = """<div><p>No name here</p></div>"""
+        elements = [BeautifulSoup(html_none, 'html.parser').find('div')]
+        name = self.scraper._extract_ability_name(elements, 'Q')
+        assert name is None
+
+    def test_clean_ability_description(self):
+        """Test cleaning ability descriptions"""
+        # Test with prefixes
+        text_with_prefix = "Q: Taric channels for up to 3 seconds and heals allies."
+        cleaned = self.scraper._clean_ability_description(text_with_prefix)
+        assert cleaned == "Taric channels for up to 3 seconds and heals allies."
+        
+        # Test with stat lines (should be avoided)
+        text_with_stats = "Description here. Damage: 80/120/160. More description."
+        cleaned = self.scraper._clean_ability_description(text_with_stats)
+        assert cleaned == "More description."
+        
+        # Test fallback to first 200 chars
+        long_text = "A" * 300
+        cleaned = self.scraper._clean_ability_description(long_text)
+        assert len(cleaned) <= 203  # 200 + "..."
+
+    def test_parse_ability_values(self):
+        """Test parsing ability values from text"""
+        text = """
+        Taric channels and heals allies.
+        Cooldown: 14/13/12/11/10
+        Mana Cost: 60/70/80/90/100
+        Range: 750
+        Damage: 80/120/160/200/240 (+0.4 AP)
+        Healing: 30/45/60/75/90 (+0.2 AP)
+        """
+        
+        values = self.scraper._parse_ability_values(text)
+        
+        assert values['cooldown'] == '14/13/12/11/10'
+        assert values['cost'] == '60/70/80/90/100'
+        assert values['range'] == '750'
+        assert values['damage'] == '80/120/160/200/240 (+0.4 AP)'
+        assert values['healing'] == '30/45/60/75/90 (+0.2 AP)'
+
+    def test_parse_ability_values_missing(self):
+        """Test parsing when some values are missing"""
+        text = "Simple ability with only cooldown. Cooldown: 10"
+        
+        values = self.scraper._parse_ability_values(text)
+        
+        assert values['cooldown'] == '10'
+        assert values['cost'] is None
+        assert values['range'] is None
+        assert values['damage'] is None
+        assert values['healing'] is None
+
+    def test_extract_ability_effects(self):
+        """Test extracting ability effects"""
+        text = """
+        Taric channels for 3 seconds, healing allies and stunning enemies.
+        The ability shields nearby champions and increases their movement speed.
+        """
+        
+        effects = self.scraper._extract_ability_effects(text)
+        
+        # Should find healing, channeling, stunning, and shield effects
+        effect_text = ' '.join(effects).lower()
+        assert any('heal' in effect for effect in effects)
+        assert any('channel' in effect for effect in effects)
+        assert any('stun' in effect for effect in effects)
+        assert any('shield' in effect for effect in effects)
+        
+        # Should limit to 5 effects max
+        assert len(effects) <= 5
+
+    def test_validate_ability_data(self):
+        """Test validation of parsed ability data"""
+        # Test valid abilities
+        valid_abilities = {
+            'passive': {
+                'name': 'Bravado',
+                'description': 'Enhances next basic attack',
+                'cooldown': None,
+                'cost': None,
+                'range': None,
+                'damage': '25-199',
+                'healing': None,
+                'effects': ['basic attack enhanced']
+            },
+            'Q': {
+                'name': 'Starlight\'s Touch',
+                'description': 'Channels to heal allies',
+                'cooldown': '14/13/12/11/10',
+                'cost': '60/70/80/90/100',
+                'range': '750',
+                'damage': None,
+                'healing': '30/45/60/75/90 (+0.2 AP)',
+                'effects': ['channel', 'heal']
+            }
+        }
+        
+        validated = self.scraper._validate_ability_data(valid_abilities)
+        
+        assert len(validated) == 2
+        assert 'passive' in validated
+        assert 'Q' in validated
+        assert validated['passive']['name'] == 'Bravado'
+        assert validated['Q']['name'] == 'Starlight\'s Touch'
+
+    def test_validate_ability_data_insufficient(self):
+        """Test validation with insufficient data"""
+        insufficient_abilities = {
+            'Q': {
+                'name': None,
+                'description': None,
+                'cooldown': None,
+                'cost': None,
+                'range': None,
+                'damage': None,
+                'healing': None,
+                'effects': []
+            }
+        }
+        
+        with patch.object(self.scraper.logger, 'warning') as mock_warning:
+            validated = self.scraper._validate_ability_data(insufficient_abilities)
+            
+            assert len(validated) == 0  # Should be filtered out
+            mock_warning.assert_called_with("Skipping Q: insufficient data")
 
 
 @pytest.mark.asyncio

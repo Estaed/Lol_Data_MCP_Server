@@ -195,8 +195,8 @@ This MCP server is designed to integrate with other LoL development projects:
 
 ## 🎯 Current Task Status
 
-**Current Task:** ✅ **Task 2.1.3 COMPLETED** - Parse Champion Stats Table  
-**Next Task:** 🔄 **Task 2.1.4** - Parse Champion Abilities Information  
+**Current Task:** ✅ **Task 2.1.4 COMPLETED** - Parse Champion Abilities Information  
+**Next Task:** 🔄 **Task 2.1.5** - Implement Error Handling and Caching  
 **Phase:** Phase 2 - Data Sources Integration  
 **Progress:** 3/5 Wiki Scraper tasks completed (60%)
 

@@ -591,59 +591,381 @@ class WikiScraper:
 
     def _validate_stat_data(self, stats: Dict[str, Dict[str, float]]) -> Dict[str, Dict[str, float]]:
         """
-        Validate and clean parsed stat data.
+        Validate parsed stat data and log warnings for outliers.
         
         Args:
-            stats: Raw parsed stats dictionary
+            stats: Dictionary of parsed champion stats
             
         Returns:
-            Validated and cleaned stats dictionary
+            Validated stats dictionary (same as input, with logging)
         """
-        validated = {}
-        
-        # Define reasonable ranges for each stat
+        # Define expected ranges for champion stats
         stat_ranges = {
-            'hp': {'base': (300, 800), 'growth': (50, 150)},
-            'mp': {'base': (0, 500), 'growth': (0, 100)}, 
-            'ad': {'base': (40, 80), 'growth': (2, 6)},
-            'armor': {'base': (20, 60), 'growth': (2, 8)},
-            'mr': {'base': (25, 45), 'growth': (0, 3)},
-            'attack_speed': {'base': (0.5, 1.0), 'growth': (1, 5)},
-            'movement_speed': {'base': (300, 400), 'growth': (0, 0)},  # Usually no growth
-            'range': {'base': (125, 650), 'growth': (0, 0)}  # Usually no growth
+            'hp': {'min_base': 300, 'max_base': 800, 'min_growth': 50, 'max_growth': 150},
+            'mp': {'min_base': 0, 'max_base': 500, 'min_growth': 0, 'max_growth': 100},
+            'ad': {'min_base': 40, 'max_base': 80, 'min_growth': 2, 'max_growth': 6},
+            'armor': {'min_base': 20, 'max_base': 60, 'min_growth': 2, 'max_growth': 8},
+            'mr': {'min_base': 25, 'max_base': 45, 'min_growth': 0, 'max_growth': 3},
+            'attack_speed': {'min_base': 0.5, 'max_base': 1.0, 'min_growth': 1, 'max_growth': 5},
+            'movement_speed': {'min_base': 300, 'max_base': 400},  # No growth typically
+            'range': {'min_base': 125, 'max_base': 650}  # No growth typically
         }
         
-        for stat_name, stat_values in stats.items():
+        for stat_name, stat_data in stats.items():
             if stat_name in stat_ranges:
                 ranges = stat_ranges[stat_name]
-                validated_stat = {}
                 
-                # Validate base value
-                if 'base' in stat_values:
-                    base_val = stat_values['base']
-                    if ranges['base'][0] <= base_val <= ranges['base'][1]:
-                        validated_stat['base'] = base_val
-                    else:
-                        self.logger.warning(f"Base {stat_name} value {base_val} outside expected range {ranges['base']}")
-                        validated_stat['base'] = base_val  # Include anyway but log warning
+                # Check base value
+                if 'base' in stat_data:
+                    base_val = stat_data['base']
+                    if base_val < ranges['min_base'] or base_val > ranges['max_base']:
+                        self.logger.warning(
+                            f"{stat_name} base value {base_val} outside expected range "
+                            f"[{ranges['min_base']}-{ranges['max_base']}]"
+                        )
                 
-                # Validate growth value
-                if 'growth' in stat_values:
-                    growth_val = stat_values['growth']
-                    if ranges['growth'][0] <= growth_val <= ranges['growth'][1]:
-                        validated_stat['growth'] = growth_val
-                    else:
-                        self.logger.warning(f"Growth {stat_name} value {growth_val} outside expected range {ranges['growth']}")
-                        validated_stat['growth'] = growth_val  # Include anyway but log warning
-                
-                if validated_stat:
-                    validated[stat_name] = validated_stat
+                # Check growth value (if applicable)
+                if 'growth' in stat_data and 'min_growth' in ranges:
+                    growth_val = stat_data['growth']
+                    if growth_val < ranges['min_growth'] or growth_val > ranges['max_growth']:
+                        self.logger.warning(
+                            f"{stat_name} growth value {growth_val} outside expected range "
+                            f"[{ranges['min_growth']}-{ranges['max_growth']}]"
+                        )
+        
+        return stats
+
+    def parse_champion_abilities(self, soup: BeautifulSoup) -> Dict[str, Any]:
+        """
+        Parse champion abilities from the abilities section of a champion page.
+        
+        Extracts detailed ability information for Passive, Q, W, E, R abilities including:
+        - Ability names and descriptions
+        - Cooldowns, mana costs, and ranges
+        - Damage values and scaling information
+        - Special effects and mechanics
+        
+        Args:
+            soup: BeautifulSoup object of the champion page
+            
+        Returns:
+            Dictionary containing structured ability data:
+            {
+                "passive": {
+                    "name": "Ability Name",
+                    "description": "What the ability does...",
+                    "cooldown": None,  # Passives typically don't have cooldowns
+                    "cost": None,
+                    "range": None,
+                    "damage": "25-199 (+0.15 Bonus AD)",
+                    "effects": ["Effect 1", "Effect 2"]
+                },
+                "Q": {
+                    "name": "Q Ability Name",
+                    "description": "Q ability description...",
+                    "cooldown": "14/13/12/11/10",
+                    "cost": "60/70/80/90/100",
+                    "range": "750",
+                    "damage": "80/120/160/200/240 (+0.4 AP)",
+                    "effects": ["Channel ability", "Heals allies"]
+                },
+                # ... W, E, R similar structure
+            }
+            
+        Raises:
+            WikiScraperError: If abilities section cannot be found or parsed
+        """
+        self.logger.info("Parsing champion abilities")
+        
+        # Find the abilities section using existing method
+        abilities_section = self._find_abilities_section(soup)
+        if not abilities_section:
+            raise WikiScraperError("Could not find abilities section for parsing")
+        
+        # Initialize abilities dictionary
+        abilities = {}
+        
+        # Define ability types to look for
+        ability_types = ['passive', 'Q', 'W', 'E', 'R']
+        
+        # Parse each ability type
+        for ability_type in ability_types:
+            ability_data = self._extract_single_ability(abilities_section, ability_type)
+            if ability_data:
+                abilities[ability_type] = ability_data
+                self.logger.debug(f"Parsed {ability_type}: {ability_data.get('name', 'Unknown')}")
             else:
-                # Unknown stat, include as-is
-                validated[stat_name] = stat_values
+                self.logger.warning(f"Could not parse {ability_type} ability")
+        
+        # Validate the parsed abilities data
+        validated_abilities = self._validate_ability_data(abilities)
+        
+        self.logger.info(f"Successfully parsed {len(validated_abilities)} abilities")
+        return validated_abilities
+
+    def _extract_single_ability(self, abilities_section: Tag, ability_type: str) -> Optional[Dict[str, Any]]:
+        """
+        Extract data for a single ability from the abilities section.
+        
+        Args:
+            abilities_section: BeautifulSoup element containing abilities
+            ability_type: Type of ability ('passive', 'Q', 'W', 'E', 'R')
+            
+        Returns:
+            Dictionary with ability data or None if not found
+        """
+        self.logger.debug(f"Extracting {ability_type} ability data")
+        
+        # Initialize ability data structure
+        ability_data = {
+            "name": None,
+            "description": None,
+            "cooldown": None,
+            "cost": None,
+            "range": None,
+            "damage": None,
+            "healing": None,
+            "effects": []
+        }
+        
+        # Strategy 1: Look for headings with ability type
+        heading_patterns = {
+            'passive': ['passive', 'innate'],
+            'Q': ['q ', 'q-', 'q:', 'ability q', 'first ability'],
+            'W': ['w ', 'w-', 'w:', 'ability w', 'second ability'],
+            'E': ['e ', 'e-', 'e:', 'ability e', 'third ability'],
+            'R': ['r ', 'r-', 'r:', 'ability r', 'ultimate', 'ult']
+        }
+        
+        ability_element = None
+        patterns = heading_patterns.get(ability_type.lower(), [ability_type.lower()])
+        
+        # Look for headings containing ability patterns
+        headings = abilities_section.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+        for heading in headings:
+            if isinstance(heading, Tag):
+                heading_text = heading.get_text().lower().strip()
+                for pattern in patterns:
+                    if pattern in heading_text:
+                        # Found heading, get content after it
+                        content_elements = []
+                        current = heading.next_sibling
+                        
+                        while current:
+                            if isinstance(current, Tag):
+                                if current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                                    break  # Stop at next heading
+                                content_elements.append(current)
+                            current = current.next_sibling
+                        
+                        if content_elements:
+                            ability_element = content_elements
+                            break
+                
+                if ability_element:
+                    break
+        
+        # Strategy 2: Look for ability cards/boxes with class patterns
+        if not ability_element:
+            ability_cards = abilities_section.find_all('div', class_=lambda x: x and any(
+                term in ' '.join(x).lower() for term in ['ability', 'skill', ability_type.lower()]
+            ))
+            
+            for card in ability_cards:
+                if isinstance(card, Tag):
+                    card_text = card.get_text().lower()
+                    for pattern in patterns:
+                        if pattern in card_text:
+                            ability_element = [card]
+                            break
+                    if ability_element:
+                        break
+        
+        # Strategy 3: Content-based search within entire abilities section
+        if not ability_element:
+            # Look for any element containing the ability type and ability-like content
+            all_elements = abilities_section.find_all(['div', 'p', 'span', 'table'])
+            for element in all_elements:
+                if isinstance(element, Tag):
+                    element_text = element.get_text().lower()
+                    for pattern in patterns:
+                        if pattern in element_text and ('cooldown' in element_text or 'damage' in element_text or 'mana' in element_text):
+                            ability_element = [element]
+                            break
+                    if ability_element:
+                        break
+        
+        if not ability_element:
+            self.logger.warning(f"Could not find {ability_type} ability element")
+            return None
+        
+        # Extract data from found elements
+        combined_text = ""
+        for element in ability_element:
+            if isinstance(element, Tag):
+                combined_text += element.get_text() + " "
+        
+        self.logger.debug(f"{ability_type} ability text: {combined_text[:200]}...")
+        
+        # Extract ability name (usually first substantial text or in heading)
+        ability_data["name"] = self._extract_ability_name(ability_element, ability_type)
+        
+        # Extract description
+        ability_data["description"] = self._clean_ability_description(combined_text)
+        
+        # Parse numerical values
+        values = self._parse_ability_values(combined_text)
+        ability_data.update(values)
+        
+        # Extract effects list
+        ability_data["effects"] = self._extract_ability_effects(combined_text)
+        
+        return ability_data
+
+    def _extract_ability_name(self, ability_elements: list, ability_type: str) -> Optional[str]:
+        """Extract the ability name from ability elements."""
+        # Look for bold text, headings, or structured name patterns
+        for element in ability_elements:
+            if isinstance(element, Tag):
+                # Check for bold/strong tags
+                bold_elements = element.find_all(['b', 'strong'])
+                for bold in bold_elements:
+                    if isinstance(bold, Tag):
+                        name = bold.get_text().strip()
+                        if len(name) > 3 and not name.lower().startswith(ability_type.lower()):
+                            return name
+                
+                # Check for heading text
+                if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                    name = element.get_text().strip()
+                    # Remove ability type prefix if present
+                    for prefix in [f"{ability_type}:", f"{ability_type} -", f"{ability_type}:"]:
+                        if name.lower().startswith(prefix.lower()):
+                            name = name[len(prefix):].strip()
+                    if len(name) > 3:
+                        return name
+        
+        return None
+
+    def _clean_ability_description(self, text: str) -> str:
+        """Clean and extract the main description from ability text."""
+        # Remove common prefixes and suffixes
+        text = re.sub(r'^(passive|q|w|e|r)[\s\-:]+', '', text, flags=re.IGNORECASE)
+        
+        # Take the first substantial sentence/paragraph as description
+        sentences = text.split('.')
+        description = ""
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if len(sentence) > 20 and not re.search(r'\d+/\d+', sentence):  # Avoid stat lines
+                description = sentence + "."
+                break
+        
+        if not description and len(text) > 50:
+            # Fallback: take first 200 characters
+            description = text[:200].strip() + "..."
+        
+        return description.strip() if description else None
+
+    def _parse_ability_values(self, text: str) -> Dict[str, Optional[str]]:
+        """Parse cooldown, cost, range, and damage values from ability text."""
+        values = {
+            "cooldown": None,
+            "cost": None,
+            "range": None,
+            "damage": None,
+            "healing": None
+        }
+        
+        # Cooldown patterns: "Cooldown: 14/13/12/11/10" or "CD: 8/7/6"
+        cooldown_match = re.search(r'cooldown[:\s]+(\d+(?:/\d+)*)', text, re.IGNORECASE)
+        if cooldown_match:
+            values["cooldown"] = cooldown_match.group(1)
+        
+        # Cost patterns: "Mana Cost: 60/70/80" or "Cost: 50 mana"
+        cost_match = re.search(r'(?:mana\s+)?cost[:\s]+(\d+(?:/\d+)*)', text, re.IGNORECASE)
+        if cost_match:
+            values["cost"] = cost_match.group(1)
+        
+        # Range patterns: "Range: 750" or "Cast Range: 600"
+        range_match = re.search(r'(?:cast\s+)?range[:\s]+(\d+)', text, re.IGNORECASE)
+        if range_match:
+            values["range"] = range_match.group(1)
+        
+        # Damage patterns: "80/120/160/200/240 (+0.4 AP)" or "Damage: 100-300"
+        damage_match = re.search(r'damage[:\s]*(\d+(?:[/-]\d+)*(?:\s*\([^)]+\))?)', text, re.IGNORECASE)
+        if damage_match:
+            values["damage"] = damage_match.group(1)
+        
+        # Healing patterns: similar to damage but for heals
+        healing_match = re.search(r'heal(?:ing)?[:\s]*(\d+(?:[/-]\d+)*(?:\s*\([^)]+\))?)', text, re.IGNORECASE)
+        if healing_match:
+            values["healing"] = healing_match.group(1)
+        
+        return values
+
+    def _extract_ability_effects(self, text: str) -> list:
+        """Extract list of ability effects from description text."""
+        effects = []
+        
+        # Look for common effect keywords
+        effect_patterns = [
+            r'channel(?:ing|s)?',
+            r'stun(?:s)?',
+            r'slow(?:s)?',
+            r'heal(?:s|ing)?',
+            r'shield(?:s)?',
+            r'dash(?:es)?',
+            r'teleport(?:s)?',
+            r'stealth',
+            r'invisib(?:le|ility)',
+            r'knockup',
+            r'knockback',
+            r'silence(?:s)?',
+            r'root(?:s)?',
+            r'reduce(?:s)?\s+cooldown',
+            r'increase(?:s)?\s+(?:attack\s+speed|movement\s+speed|damage)',
+        ]
+        
+        for pattern in effect_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                # Extract the context around the effect
+                match = re.search(f'.{{0,20}}{pattern}.{{0,30}}', text, re.IGNORECASE)
+                if match:
+                    effect_text = match.group(0).strip()
+                    if effect_text not in effects:
+                        effects.append(effect_text)
+        
+        return effects[:5]  # Limit to 5 most relevant effects
+
+    def _validate_ability_data(self, abilities: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """Validate and clean up parsed ability data."""
+        validated = {}
+        
+        for ability_type, ability_data in abilities.items():
+            if ability_data and isinstance(ability_data, dict):
+                # Ensure all required fields exist
+                validated_ability = {
+                    "name": ability_data.get("name"),
+                    "description": ability_data.get("description"),
+                    "cooldown": ability_data.get("cooldown"),
+                    "cost": ability_data.get("cost"),
+                    "range": ability_data.get("range"),
+                    "damage": ability_data.get("damage"),
+                    "healing": ability_data.get("healing"),
+                    "effects": ability_data.get("effects", [])
+                }
+                
+                # Validate that we have at least a name or description
+                if validated_ability["name"] or validated_ability["description"]:
+                    validated[ability_type] = validated_ability
+                    self.logger.debug(f"Validated {ability_type}: {validated_ability['name']}")
+                else:
+                    self.logger.warning(f"Skipping {ability_type}: insufficient data")
         
         return validated
-    
+
     def _validate_page_structure(self, soup: BeautifulSoup) -> Dict[str, bool]:
         """
         Validate that expected sections exist and contain meaningful data.
