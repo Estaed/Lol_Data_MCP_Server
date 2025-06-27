@@ -6,10 +6,16 @@ Implements rate limiting, error handling, and proper HTTP client configuration.
 """
 
 import asyncio
+import json
+import hashlib
 import logging
+import os
 import re
 import time
-from typing import Optional, Dict, Any, List
+from datetime import datetime, timedelta
+from dataclasses import dataclass, asdict, field
+from pathlib import Path
+from typing import Optional, Dict, Any, List, Union
 from urllib.parse import urljoin, quote
 
 import httpx
@@ -24,6 +30,145 @@ class WikiScraperError(Exception):
 class ChampionNotFoundError(WikiScraperError):
     """Raised when a champion page cannot be found"""
     pass
+
+
+@dataclass
+class ScrapingMetrics:
+    """Performance metrics for scraping operations"""
+    total_requests: int = 0
+    cache_hits: int = 0
+    cache_misses: int = 0
+    parsing_successes: int = 0
+    parsing_failures: int = 0
+    total_request_time: float = 0.0
+    avg_request_time: float = 0.0
+    errors: List[str] = field(default_factory=list)
+
+
+class CacheManager:
+    """Manages file-based caching for scraped pages"""
+    
+    def __init__(self, cache_dir: str = "cache/wiki_pages", ttl_hours: int = 24):
+        self.cache_dir = Path(cache_dir)
+        self.ttl = timedelta(hours=ttl_hours)
+        self.metadata_file = self.cache_dir / "metadata.json"
+        self.logger = logging.getLogger(__name__)
+        self._ensure_cache_dir()
+        
+    def _ensure_cache_dir(self) -> None:
+        """Create cache directory if it doesn't exist"""
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            self.logger.debug(f"Cache directory ensured: {self.cache_dir}")
+        except OSError as e:
+            self.logger.error(f"Failed to create cache directory: {e}")
+            
+    def _get_cache_key(self, champion_name: str) -> str:
+        """Generate cache key for champion"""
+        return hashlib.md5(champion_name.lower().encode()).hexdigest()
+        
+    def _load_metadata(self) -> Dict[str, Any]:
+        """Load cache metadata"""
+        if self.metadata_file.exists():
+            try:
+                with open(self.metadata_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                self.logger.warning(f"Failed to load cache metadata: {e}")
+                return {}
+        return {}
+        
+    def _save_metadata(self, metadata: Dict[str, Any]) -> None:
+        """Save cache metadata"""
+        try:
+            with open(self.metadata_file, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, default=str)
+        except IOError as e:
+            self.logger.warning(f"Failed to save cache metadata: {e}")
+            
+    def is_cache_valid(self, champion_name: str) -> bool:
+        """Check if cached data is still valid"""
+        cache_key = self._get_cache_key(champion_name)
+        cache_file = self.cache_dir / f"{cache_key}.html"
+        
+        if not cache_file.exists():
+            return False
+            
+        metadata = self._load_metadata()
+        if cache_key not in metadata:
+            return False
+            
+        try:
+            cached_time = datetime.fromisoformat(metadata[cache_key]['timestamp'])
+            is_valid = datetime.now() - cached_time < self.ttl
+            self.logger.debug(f"Cache validity check for {champion_name}: {is_valid}")
+            return is_valid
+        except (KeyError, ValueError) as e:
+            self.logger.warning(f"Invalid cache metadata for {champion_name}: {e}")
+            return False
+        
+    def get_cached_content(self, champion_name: str) -> Optional[str]:
+        """Get cached HTML content if valid"""
+        if not self.is_cache_valid(champion_name):
+            return None
+            
+        cache_key = self._get_cache_key(champion_name)
+        cache_file = self.cache_dir / f"{cache_key}.html"
+        
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+                self.logger.debug(f"Retrieved cached content for {champion_name} ({len(content)} chars)")
+                return content
+        except IOError as e:
+            self.logger.warning(f"Failed to read cached content for {champion_name}: {e}")
+            return None
+            
+    def cache_content(self, champion_name: str, content: str) -> None:
+        """Cache HTML content"""
+        cache_key = self._get_cache_key(champion_name)
+        cache_file = self.cache_dir / f"{cache_key}.html"
+        
+        try:
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+                
+            metadata = self._load_metadata()
+            metadata[cache_key] = {
+                'champion_name': champion_name,
+                'timestamp': datetime.now().isoformat(),
+                'file_size': len(content)
+            }
+            self._save_metadata(metadata)
+            self.logger.info(f"Cached content for {champion_name} ({len(content)} chars)")
+        except IOError as e:
+            self.logger.warning(f"Failed to cache content for {champion_name}: {e}")
+            
+    def cleanup_expired(self) -> int:
+        """Remove expired cache entries"""
+        metadata = self._load_metadata()
+        removed_count = 0
+        
+        for cache_key, data in list(metadata.items()):
+            try:
+                cached_time = datetime.fromisoformat(data['timestamp'])
+                if datetime.now() - cached_time >= self.ttl:
+                    cache_file = self.cache_dir / f"{cache_key}.html"
+                    try:
+                        cache_file.unlink(missing_ok=True)
+                        del metadata[cache_key]
+                        removed_count += 1
+                        self.logger.debug(f"Removed expired cache entry: {cache_key}")
+                    except IOError as e:
+                        self.logger.warning(f"Failed to remove cache file {cache_key}: {e}")
+            except (KeyError, ValueError) as e:
+                self.logger.warning(f"Invalid cache entry {cache_key}: {e}")
+                
+        if removed_count > 0:
+            self._save_metadata(metadata)
+            self.logger.info(f"Cleaned up {removed_count} expired cache entries")
+            
+        return removed_count
 
 
 class WikiScraper:
@@ -46,7 +191,9 @@ class WikiScraper:
         rate_limit_delay: float = 1.0,
         timeout: float = 30.0,
         max_retries: int = 3,
-        retry_delay: float = 2.0
+        retry_delay: float = 2.0,
+        enable_cache: bool = True,
+        cache_ttl_hours: int = 24
     ):
         """
         Initialize the WikiScraper.
@@ -56,12 +203,19 @@ class WikiScraper:
             timeout: HTTP request timeout in seconds (default: 30.0)
             max_retries: Maximum number of retry attempts (default: 3)
             retry_delay: Delay between retries in seconds (default: 2.0)
+            enable_cache: Enable file-based caching (default: True)
+            cache_ttl_hours: Cache time-to-live in hours (default: 24)
         """
         self.rate_limit_delay = rate_limit_delay
         self.timeout = timeout
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.last_request_time = 0.0
+        
+        # Configure caching and metrics
+        self.enable_cache = enable_cache
+        self.cache_manager = CacheManager(ttl_hours=cache_ttl_hours) if enable_cache else None
+        self.metrics = ScrapingMetrics()
         
         # Configure logging
         self.logger = logging.getLogger(__name__)
@@ -109,6 +263,26 @@ class WikiScraper:
             await self._client.aclose()
             self._client = None
             self.logger.info("HTTP client closed")
+    
+    def _update_metrics(self, start_time: float, success: bool, cache_hit: bool = False, error: Optional[str] = None) -> None:
+        """Update performance metrics"""
+        request_time = time.time() - start_time
+        self.metrics.total_requests += 1
+        self.metrics.total_request_time += request_time
+        self.metrics.avg_request_time = self.metrics.total_request_time / self.metrics.total_requests
+        
+        if success:
+            self.metrics.parsing_successes += 1
+        else:
+            self.metrics.parsing_failures += 1
+            if error:
+                error_entry = f"{datetime.now().isoformat()}: {error}"
+                self.metrics.errors.append(error_entry)
+                
+        self.logger.debug(f"Updated metrics: requests={self.metrics.total_requests}, "
+                         f"successes={self.metrics.parsing_successes}, "
+                         f"cache_hits={self.metrics.cache_hits}, "
+                         f"avg_time={self.metrics.avg_request_time:.3f}s")
     
     async def _rate_limit(self) -> None:
         """Implement rate limiting to respect server resources"""
@@ -189,7 +363,7 @@ class WikiScraper:
     
     async def fetch_champion_page(self, champion_name: str) -> BeautifulSoup:
         """
-        Fetch and parse a champion's wiki page.
+        Fetch and parse a champion's wiki page with caching support.
         
         Args:
             champion_name: Name of the champion (e.g., "Taric")
@@ -201,11 +375,34 @@ class WikiScraper:
             ChampionNotFoundError: If champion page doesn't exist
             WikiScraperError: If page cannot be fetched
         """
-        url = self._build_champion_url(champion_name)
+        start_time = time.time()
         
         try:
+            self.logger.info(f"Fetching champion page for: {champion_name}")
+            
+            # Check cache first
+            if self.enable_cache and self.cache_manager:
+                cached_content = self.cache_manager.get_cached_content(champion_name)
+                if cached_content:
+                    self.metrics.cache_hits += 1
+                    self.logger.info(f"Cache hit for champion: {champion_name}")
+                    soup = BeautifulSoup(cached_content, 'html.parser')
+                    self._update_metrics(start_time, success=True, cache_hit=True)
+                    return soup
+                else:
+                    self.metrics.cache_misses += 1
+                    self.logger.debug(f"Cache miss for champion: {champion_name}")
+            
+            # Fetch from web
+            url = self._build_champion_url(champion_name)
             response = await self._make_request(url)
-            soup = BeautifulSoup(response.text, 'html.parser')
+            content = response.text
+            
+            # Cache the content
+            if self.enable_cache and self.cache_manager:
+                self.cache_manager.cache_content(champion_name, content)
+                
+            soup = BeautifulSoup(content, 'html.parser')
             
             # Basic validation that we got a champion page
             title = soup.find('title')
@@ -215,9 +412,12 @@ class WikiScraper:
                     self.logger.warning(f"Unusual page title: {title_text}")
             
             self.logger.info(f"Successfully parsed champion page for {champion_name}")
+            self._update_metrics(start_time, success=True, cache_hit=False)
+            
             return soup
             
         except Exception as e:
+            self._update_metrics(start_time, success=False, error=str(e))
             self.logger.error(f"Failed to fetch champion page for {champion_name}: {e}")
             raise
     
@@ -1045,6 +1245,88 @@ class WikiScraper:
         
         self.logger.debug(f"Page structure validation: {validation}")
         return validation
+
+    def parse_champion_stats_safe(self, soup: BeautifulSoup) -> Dict[str, Any]:
+        """Enhanced stats parsing with graceful degradation"""
+        try:
+            result = self.parse_champion_stats(soup)
+            self.metrics.parsing_successes += 1
+            self.logger.debug("Stats parsing successful")
+            return result
+        except Exception as e:
+            self.logger.warning(f"Stats parsing failed: {e}")
+            self.metrics.parsing_failures += 1
+            error_entry = f"{datetime.now().isoformat()}: Stats parsing failed: {e}"
+            self.metrics.errors.append(error_entry)
+            return {
+                "error": "Failed to parse stats",
+                "partial_data": True,
+                "stats": {},
+                "error_details": str(e)
+            }
+            
+    def parse_champion_abilities_safe(self, soup: BeautifulSoup) -> Dict[str, Any]:
+        """Enhanced abilities parsing with graceful degradation"""  
+        try:
+            result = self.parse_champion_abilities(soup)
+            self.metrics.parsing_successes += 1
+            self.logger.debug("Abilities parsing successful")
+            return result
+        except Exception as e:
+            self.logger.warning(f"Abilities parsing failed: {e}")
+            self.metrics.parsing_failures += 1
+            error_entry = f"{datetime.now().isoformat()}: Abilities parsing failed: {e}"
+            self.metrics.errors.append(error_entry)
+            return {
+                "error": "Failed to parse abilities", 
+                "partial_data": True,
+                "abilities": {},
+                "error_details": str(e)
+            }
+            
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get current performance metrics"""
+        return asdict(self.metrics)
+        
+    def reset_metrics(self) -> None:
+        """Reset performance metrics"""
+        self.metrics = ScrapingMetrics()
+        self.logger.info("Performance metrics reset")
+        
+    async def cleanup_cache(self) -> int:
+        """Clean up expired cache entries"""
+        if self.cache_manager:
+            removed_count = self.cache_manager.cleanup_expired()
+            self.logger.info(f"Cache cleanup completed: {removed_count} entries removed")
+            return removed_count
+        return 0
+    
+    def get_cache_info(self) -> Dict[str, Any]:
+        """Get cache information and statistics"""
+        if not self.cache_manager:
+            return {"cache_enabled": False}
+            
+        cache_info = {
+            "cache_enabled": True,
+            "cache_dir": str(self.cache_manager.cache_dir),
+            "ttl_hours": self.cache_manager.ttl.total_seconds() / 3600,
+            "cache_hits": self.metrics.cache_hits,
+            "cache_misses": self.metrics.cache_misses,
+            "hit_rate": 0.0
+        }
+        
+        total_requests = self.metrics.cache_hits + self.metrics.cache_misses
+        if total_requests > 0:
+            cache_info["hit_rate"] = self.metrics.cache_hits / total_requests
+            
+        # Add metadata info if available
+        try:
+            metadata = self.cache_manager._load_metadata()
+            cache_info["cached_entries"] = len(metadata)
+        except Exception:
+            cache_info["cached_entries"] = 0
+            
+        return cache_info
 
 
 # Example usage and testing functions
