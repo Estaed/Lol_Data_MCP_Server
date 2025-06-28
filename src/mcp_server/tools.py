@@ -258,112 +258,41 @@ class GetAbilityDetailsTool(MCPTool):
         )
 
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute ability details retrieval with direct mock data"""
+        """Execute ability details retrieval using WikiScraper-enabled ChampionService"""
         validated_params = GetAbilityDetailsInput(**params)
         
-        # Direct mock data to avoid import issues
-        champion_abilities = {
-            "taric": {
-                "passive": {
-                    "name": "Bravado",
-                    "description": "Taric's spells grant him and his Bastion charges that enhance his next two basic attacks to deal bonus magic damage, reduce his basic ability cooldowns, and grant him and his Bastion charges of Bravado.",
-                    "cooldown": "N/A",
-                    "cost": "N/A",
-                    "range": "N/A",
-                    "effect": "Enhanced basic attacks reduce cooldowns and grant charges"
-                },
-                "q": {
-                    "name": "Starlight's Touch",
-                    "description": "Taric heals himself and his Bastion. Healing is increased based on charges of Bravado consumed.",
-                    "cooldown": "14/13/12/11/10 seconds",
-                    "cost": "60/65/70/75/80 mana + 3 charges",
-                    "range": "Self/Bastion",
-                    "effect": "Heals self and Bastion, enhanced by Bravado charges"
-                },
-                "w": {
-                    "name": "Bastion",
-                    "description": "Taric shields himself and links to an ally champion. Linked allies gain Bastion passive and are healed by Taric's abilities.",
-                    "cooldown": "20/18/16/14/12 seconds",
-                    "cost": "60 mana",
-                    "range": "800",
-                    "effect": "Links to ally, shares abilities and provides passive benefits"
-                },
-                "e": {
-                    "name": "Dazzle",
-                    "description": "Taric shoots out a beam of starlight that damages and stuns enemies. The stun duration increases with range.",
-                    "cooldown": "13/12/11/10/9 seconds",
-                    "cost": "60 mana",
-                    "range": "575",
-                    "effect": "Stuns enemies, duration increases with distance"
-                },
-                "r": {
-                    "name": "Cosmic Radiance",
-                    "description": "After a delay, Taric and his Bastion become invulnerable for a short duration.",
-                    "cooldown": "160/120/80 seconds",
-                    "cost": "100 mana",
-                    "range": "Self/Bastion",
-                    "effect": "Grants invulnerability after delay to self and Bastion"
-                }
-            },
-            "ezreal": {
-                "passive": {
-                    "name": "Rising Spell Force",
-                    "description": "Hitting enemies with abilities grants attack speed.",
-                    "cooldown": "N/A",
-                    "cost": "N/A",
-                    "range": "N/A",
-                    "effect": "Attack speed buff when hitting abilities"
-                },
-                "q": {
-                    "name": "Mystic Shot",
-                    "description": "Fires a projectile that deals damage and reduces cooldowns on hit.",
-                    "cooldown": "6.5/6/5.5/5/4.5 seconds",
-                    "cost": "28/31/34/37/40 mana",
-                    "range": "1150",
-                    "effect": "Skillshot that reduces cooldowns on hit"
-                },
-                "w": {
-                    "name": "Essence Flux",
-                    "description": "Fires an orb that damages enemies and marks them.",
-                    "cooldown": "12/11/10/9/8 seconds",
-                    "cost": "50/60/70/80/90 mana",
-                    "range": "1000",
-                    "effect": "Marks enemies for additional damage"
-                },
-                "e": {
-                    "name": "Arcane Shift",
-                    "description": "Teleports to target location and fires a homing bolt.",
-                    "cooldown": "25/22/19/16/13 seconds",
-                    "cost": "90 mana",
-                    "range": "475",
-                    "effect": "Blink ability with damage component"
-                },
-                "r": {
-                    "name": "Trueshot Barrage",
-                    "description": "Fires a global skillshot that damages all enemies hit.",
-                    "cooldown": "120/105/90 seconds",
-                    "cost": "100 mana",
-                    "range": "Global",
-                    "effect": "Global skillshot with decreasing damage"
-                }
-            }
-        }
-        
-        # Get ability details
-        champion_key = validated_params.champion.lower()
-        ability_key = validated_params.ability.value.lower()
-        
-        ability_details = {}
-        if champion_key in champion_abilities and ability_key in champion_abilities[champion_key]:
-            ability_details = champion_abilities[champion_key][ability_key]
+        try:
+            # Use WikiScraper-enabled ChampionService instead of hardcoded data
+            champion_service = self._get_champion_service()
+            champion_data = await champion_service.get_champion_data(
+                champion=validated_params.champion,
+                include=["abilities"]  # Only need abilities for this tool
+            )
             
-        return {
-            "champion": validated_params.champion,
-            "ability": validated_params.ability.value,
-            "level": validated_params.level,
-            "scaling_included": validated_params.include_scaling,
-            "details": ability_details
-        }
+            # Extract the specific ability from champion data
+            abilities = champion_data.get("abilities", {})
+            ability_key = validated_params.ability.value.lower()
+            ability_details = abilities.get(ability_key, {})
+            
+            # Return in the same format as before
+            return {
+                "champion": validated_params.champion,
+                "ability": validated_params.ability.value,
+                "level": validated_params.level,
+                "scaling_included": validated_params.include_scaling,
+                "details": ability_details
+            }
+            
+        except Exception as e:
+            # Proper error handling for wiki scraping failures and invalid champions
+            return {
+                "champion": validated_params.champion,
+                "ability": validated_params.ability.value,
+                "level": validated_params.level,
+                "scaling_included": validated_params.include_scaling,
+                "error": f"Failed to retrieve ability data: {str(e)}",
+                "details": {}
+            }
 
 
 class GetItemDataTool(MCPTool):

@@ -209,7 +209,10 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_missing_required_params(self):
         """Test calling tool with missing required parameters"""
-        with pytest.raises(ValueError):
+        # With WikiScraper integration, empty champion name now gives ChampionNotFoundError
+        # This is better error handling than generic ValueError
+        from src.services.champion_service import ChampionNotFoundError
+        with pytest.raises(ChampionNotFoundError):
             await tool_registry.execute_tool("get_champion_data", {})
 
 

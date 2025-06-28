@@ -206,6 +206,6 @@ This MCP server is designed to integrate with other LoL development projects:
 **Achievement:** Real champion data from LoL Wiki with intelligent fallback to mock data  
 **Result:** 160+ champions now accessible via MCP tools with 100% reliability  
 
-**🎯 NEXT TASK:** Task 2.1.7 - Integrate WikiScraper with MCP Tools  
+**🎯 CURRENT TASK:** Task 2.1.8 - Champion Discovery and Validation  
 **Objective:** Update MCP tools to use WikiScraper-enabled ChampionService  
 **Status:** Ready to implement (ChampionService integration complete)
