@@ -1,37 +1,40 @@
 """
-Champion Service for League of Legends MCP Server
+Champion Service for League of Legends MCP Server (Updated with WikiScraper Integration)
 
 This module provides service layer functionality for retrieving and processing
 champion data. It handles data validation, error handling, and logging for
-champion-related operations.
+champion-related operations with real wiki data and mock fallback.
 """
 
 import logging
+import re
+import httpx
 from typing import Dict, Any, Optional
 import structlog
 
 from pydantic import BaseModel, Field, ValidationError
 from src.mcp_server.tools import GetChampionDataInput
+from src.data_sources.scrapers.wiki_scraper import WikiScraper, WikiScraperError, ChampionNotFoundError as WikiChampionNotFoundError
 
 
 # Response Models
 class ChampionStats(BaseModel):
     """Champion base statistics model"""
     
-    health: float = Field(..., description="Base health points")
-    health_per_level: float = Field(..., description="Health gained per level")
-    mana: float = Field(..., description="Base mana points")
-    mana_per_level: float = Field(..., description="Mana gained per level")
-    attack_damage: float = Field(..., description="Base attack damage")
-    attack_damage_per_level: float = Field(..., description="AD gained per level")
-    armor: float = Field(..., description="Base armor")
-    armor_per_level: float = Field(..., description="Armor gained per level")
-    magic_resist: float = Field(..., description="Base magic resistance")
-    magic_resist_per_level: float = Field(..., description="MR gained per level")
-    movement_speed: float = Field(..., description="Base movement speed")
-    attack_range: float = Field(..., description="Attack range")
-    attack_speed: float = Field(..., description="Base attack speed (attacks per second)")
-    attack_speed_per_level: float = Field(..., description="Attack speed gained per level")
+    health: Optional[float] = Field(None, description="Base health points")
+    health_per_level: Optional[float] = Field(None, description="Health gained per level")
+    mana: Optional[float] = Field(None, description="Base mana points")
+    mana_per_level: Optional[float] = Field(None, description="Mana gained per level")
+    attack_damage: Optional[float] = Field(None, description="Base attack damage")
+    attack_damage_per_level: Optional[float] = Field(None, description="AD gained per level")
+    armor: Optional[float] = Field(None, description="Base armor")
+    armor_per_level: Optional[float] = Field(None, description="Armor gained per level")
+    magic_resist: Optional[float] = Field(None, description="Base magic resistance")
+    magic_resist_per_level: Optional[float] = Field(None, description="MR gained per level")
+    movement_speed: Optional[float] = Field(None, description="Base movement speed")
+    attack_range: Optional[float] = Field(None, description="Attack range")
+    attack_speed: Optional[float] = Field(None, description="Base attack speed (attacks per second)")
+    attack_speed_per_level: Optional[float] = Field(None, description="Attack speed gained per level")
 
 
 class AbilityInfo(BaseModel):
@@ -48,11 +51,11 @@ class AbilityInfo(BaseModel):
 class ChampionAbilities(BaseModel):
     """Champion abilities model"""
     
-    passive: AbilityInfo = Field(..., description="Passive ability")
-    q: AbilityInfo = Field(..., description="Q ability")
-    w: AbilityInfo = Field(..., description="W ability")
-    e: AbilityInfo = Field(..., description="E ability")
-    r: AbilityInfo = Field(..., description="R (Ultimate) ability")
+    passive: Optional[AbilityInfo] = Field(None, description="Passive ability")
+    q: Optional[AbilityInfo] = Field(None, description="Q ability")
+    w: Optional[AbilityInfo] = Field(None, description="W ability")
+    e: Optional[AbilityInfo] = Field(None, description="E ability")
+    r: Optional[AbilityInfo] = Field(None, description="R (Ultimate) ability")
 
 
 class ChampionData(BaseModel):
@@ -61,7 +64,7 @@ class ChampionData(BaseModel):
     name: str = Field(..., description="Champion name")
     title: str = Field(..., description="Champion title")
     roles: list[str] = Field(..., description="Primary roles")
-    difficulty: int = Field(..., ge=1, le=10, description="Difficulty rating 1-10")
+    difficulty: Optional[int] = Field(None, ge=1, le=10, description="Difficulty rating 1-10")
     stats: Optional[ChampionStats] = Field(None, description="Champion statistics")
     abilities: Optional[ChampionAbilities] = Field(None, description="Champion abilities")
     tags: list[str] = Field(default_factory=list, description="Champion tags")
@@ -77,13 +80,250 @@ class ChampionNotFoundError(Exception):
 
 
 class ChampionService:
-    """Service class for champion data operations"""
+    """Service class for champion data operations with WikiScraper integration"""
     
-    def __init__(self):
-        """Initialize the champion service with logging"""
+    def __init__(self, enable_wiki: bool = True, use_cache: bool = True):
+        """
+        Initialize the champion service with WikiScraper integration
+        
+        Args:
+            enable_wiki: Whether to enable WikiScraper (disable for testing)
+            use_cache: Whether to enable caching in WikiScraper
+        """
         self.logger = structlog.get_logger(__name__)
+        self.enable_wiki = enable_wiki
         self._mock_data = self._initialize_mock_data()
+        
+        # Initialize WikiScraper if enabled
+        if self.enable_wiki:
+            self.wiki_scraper = WikiScraper(
+                rate_limit_delay=1.0,
+                timeout=30.0,
+                max_retries=3,
+                enable_cache=use_cache,
+                cache_ttl_hours=24
+            )
+        else:
+            self.wiki_scraper = None
+            
+        self.logger.info(
+            "ChampionService initialized",
+            wiki_enabled=self.enable_wiki,
+            cache_enabled=use_cache
+        )
     
+    def _normalize_champion_name(self, name: str) -> str:
+        """
+        Normalize champion name for wiki lookup and internal processing
+        
+        Args:
+            name: Champion name to normalize
+            
+        Returns:
+            Normalized champion name
+        """
+        # Remove extra spaces and convert to title case
+        normalized = name.strip().title()
+        
+        # Handle special characters for wiki compatibility
+        # Examples: "Kai'Sa" -> "Kai'Sa", "Twisted Fate" -> "Twisted Fate"
+        normalized = re.sub(r'\s+', ' ', normalized)  # Collapse multiple spaces
+        
+        self.logger.debug(f"Normalized champion name: {name} -> {normalized}")
+        return normalized
+    
+    def _transform_wiki_stats(self, wiki_stats: Dict[str, Any]) -> Optional[ChampionStats]:
+        """
+        Transform WikiScraper stats format to ChampionStats model
+        Only includes stats that are actually available from wiki - no fake defaults
+        
+        Args:
+            wiki_stats: Stats from WikiScraper.parse_champion_stats()
+            
+        Returns:
+            ChampionStats object with only available stats, or None if no stats available
+        """
+        if not wiki_stats:
+            return None
+            
+        # Mapping from WikiScraper field names to ChampionStats fields
+        stat_mapping = {
+            'hp': ('health', 'health_per_level'),
+            'mp': ('mana', 'mana_per_level'),
+            'ad': ('attack_damage', 'attack_damage_per_level'),
+            'armor': ('armor', 'armor_per_level'),
+            'mr': ('magic_resist', 'magic_resist_per_level'),
+            'attack_speed': ('attack_speed', 'attack_speed_per_level'),
+            'movement_speed': ('movement_speed', None),
+            'attack_range': ('attack_range', None)
+        }
+        
+        stats_data = {}
+        stats_found = False
+        
+        for wiki_key, (base_field, growth_field) in stat_mapping.items():
+            if wiki_key in wiki_stats:
+                wiki_stat = wiki_stats[wiki_key]
+                if isinstance(wiki_stat, dict):
+                    # Extract base value
+                    if 'base' in wiki_stat:
+                        stats_data[base_field] = float(wiki_stat['base'])
+                        stats_found = True
+                    
+                    # Extract growth value if field exists
+                    if growth_field and 'growth' in wiki_stat:
+                        stats_data[growth_field] = float(wiki_stat['growth'])
+                        stats_found = True
+                else:
+                    # Handle simple numeric values
+                    stats_data[base_field] = float(wiki_stat)
+                    stats_found = True
+        
+        if not stats_found:
+            self.logger.warning("No usable stats found in wiki data")
+            return None
+        
+        self.logger.info(f"Successfully transformed {len(stats_data)} stat fields from wiki")
+        return ChampionStats(**stats_data)
+    
+    def _transform_wiki_abilities(self, wiki_abilities: Dict[str, Any]) -> Optional[ChampionAbilities]:
+        """
+        Transform WikiScraper abilities format to ChampionAbilities model
+        Only includes abilities that are actually available from wiki
+        
+        Args:
+            wiki_abilities: Abilities from WikiScraper.parse_champion_abilities()
+            
+        Returns:
+            ChampionAbilities object with only available abilities, or None if no abilities available
+        """
+        if not wiki_abilities:
+            return None
+            
+        def transform_ability(ability_data: Dict[str, Any]) -> AbilityInfo:
+            """Transform single ability data"""
+            # Format effects list into string
+            effects = ability_data.get('effects', [])
+            effect_str = ', '.join(effects) if effects else "No special effects"
+            
+            # Handle None values with appropriate defaults
+            return AbilityInfo(
+                name=ability_data.get('name', 'Unknown'),
+                description=ability_data.get('description', 'No description available'),
+                cooldown=ability_data.get('cooldown') or 'N/A',
+                cost=ability_data.get('cost') or 'N/A',
+                range=ability_data.get('range') or 'N/A',
+                effect=effect_str
+            )
+        
+        # Transform each ability - only include if we have data
+        abilities_data = {}
+        abilities_found = False
+        
+        ability_types = ['passive', 'Q', 'W', 'E', 'R']
+        for ability_type in ability_types:
+            key = ability_type.lower()
+            if key in wiki_abilities:
+                abilities_data[key] = transform_ability(wiki_abilities[key])
+                abilities_found = True
+            else:
+                # Set to None for missing abilities instead of fake data
+                abilities_data[key] = None
+        
+        if not abilities_found:
+            self.logger.warning("No usable abilities found in wiki data")
+            return None
+        
+        self.logger.info(f"Successfully transformed abilities from wiki")
+        return ChampionAbilities(
+            passive=abilities_data.get('passive'),
+            q=abilities_data.get('q'),
+            w=abilities_data.get('w'), 
+            e=abilities_data.get('e'),
+            r=abilities_data.get('r')
+        )
+    
+    async def _get_champion_from_wiki(self, champion_name: str) -> ChampionData:
+        """
+        Get champion data from WikiScraper
+        
+        Args:
+            champion_name: Champion name to fetch
+            
+        Returns:
+            ChampionData object with real wiki data (stats/abilities may be None if unavailable)
+            
+        Raises:
+            WikiScraperError: If wiki scraping fails
+            ChampionNotFoundError: If champion not found on wiki
+        """
+        if not self.wiki_scraper:
+            raise WikiScraperError("WikiScraper not enabled")
+        
+        normalized_name = self._normalize_champion_name(champion_name)
+        
+        self.logger.info(f"Fetching champion data from wiki: {normalized_name}")
+        
+        # Fetch and parse the champion page
+        soup = await self.wiki_scraper.fetch_champion_page(normalized_name)
+        
+        # Parse stats and abilities safely
+        wiki_stats = self.wiki_scraper.parse_champion_stats_safe(soup)
+        wiki_abilities = self.wiki_scraper.parse_champion_abilities_safe(soup)
+        
+        # Transform to ChampionData format (may be None if no data available)
+        stats = None
+        abilities = None
+        
+        if wiki_stats.get('stats'):
+            stats = self._transform_wiki_stats(wiki_stats['stats'])
+            
+        if wiki_abilities.get('abilities'):
+            abilities = self._transform_wiki_abilities(wiki_abilities['abilities'])
+        
+        # Create ChampionData object
+        champion_data = ChampionData(
+            name=normalized_name,
+            title="Champion from Wiki",  # Generic title - will be enhanced in future tasks
+            roles=["Unknown"],  # Will be enhanced in future tasks
+            difficulty=None,  # Don't fake difficulty if we don't have it
+            stats=stats,  # May be None
+            abilities=abilities,  # May be None
+            tags=["Champion"],  # Will be enhanced in future tasks
+            patch="current"
+        )
+        
+        # Log what we actually got
+        stats_status = "available" if stats else "unavailable"
+        abilities_status = "available" if abilities else "unavailable"
+        self.logger.info(
+            f"Retrieved wiki data for {normalized_name}",
+            stats=stats_status,
+            abilities=abilities_status
+        )
+        
+        return champion_data
+    
+    async def _get_champion_from_mock(self, champion_name: str) -> ChampionData:
+        """
+        Get champion data from mock data (refactored from existing code)
+        
+        Args:
+            champion_name: Champion name to fetch
+            
+        Returns:
+            ChampionData object with mock data
+            
+        Raises:
+            ChampionNotFoundError: If champion not found in mock data
+        """
+        champion_key = champion_name.lower().strip()
+        
+        if champion_key not in self._mock_data:
+            raise ChampionNotFoundError(champion_name)
+        
+        return self._mock_data[champion_key]
+
     def _initialize_mock_data(self) -> Dict[str, ChampionData]:
         """Initialize mock champion data for development"""
         
@@ -235,7 +475,7 @@ class ChampionService:
         include: Optional[list[str]] = None
     ) -> Dict[str, Any]:
         """
-        Retrieve comprehensive champion data
+        Retrieve comprehensive champion data with WikiScraper integration and fallback
         
         Args:
             champion: Champion name to retrieve data for
@@ -246,7 +486,7 @@ class ChampionService:
             Dictionary containing champion data based on include parameters
             
         Raises:
-            ChampionNotFoundError: If champion is not found
+            ChampionNotFoundError: If champion is not found in any data source
             ValidationError: If input parameters are invalid
         """
         if include is None:
@@ -257,7 +497,8 @@ class ChampionService:
             "Champion data request",
             champion=champion,
             patch=patch,
-            include=include
+            include=include,
+            wiki_enabled=self.enable_wiki
         )
         
         try:
@@ -268,21 +509,43 @@ class ChampionService:
                 include=include
             )
             
-            # Normalize champion name for lookup
-            champion_key = champion.lower().strip()
+            # Try to get data from WikiScraper first, then fallback to mock
+            champion_data = None
+            data_source = "unknown"
             
-            # Check if champion exists in mock data
-            if champion_key not in self._mock_data:
-                self.logger.warning(
-                    "Champion not found", 
-                    champion=champion,
-                    available_champions=list(self._mock_data.keys())
-                )
-                raise ChampionNotFoundError(champion)
-            
-            # Get champion data
-            champion_data = self._mock_data[champion_key]
-            
+            if self.enable_wiki:
+                try:
+                    wiki_data = await self._get_champion_from_wiki(champion)
+                    
+                    # Check if we got useful data from wiki
+                    has_useful_data = False
+                    if ("stats" in include and wiki_data.stats) or ("abilities" in include and wiki_data.abilities):
+                        has_useful_data = True
+                    elif "stats" not in include and "abilities" not in include:
+                        # If not requesting stats/abilities, wiki data is useful
+                        has_useful_data = True
+                    
+                    if has_useful_data:
+                        champion_data = wiki_data
+                        data_source = "wiki"
+                        self.logger.info(f"Retrieved {champion} data from wiki with useful content")
+                    else:
+                        # Wiki page exists but no useful data - fallback to mock
+                        self.logger.warning(f"Wiki data for {champion} incomplete, falling back to mock data")
+                        champion_data = await self._get_champion_from_mock(champion)
+                        data_source = "mock_fallback_incomplete"
+                        
+                except (WikiScraperError, WikiChampionNotFoundError, httpx.RequestError, Exception) as e:
+                    self.logger.warning(
+                        f"Wiki failed for {champion}, falling back to mock data: {e}",
+                        error_type=type(e).__name__
+                    )
+                    champion_data = await self._get_champion_from_mock(champion)
+                    data_source = "mock_fallback_error"
+            else:
+                champion_data = await self._get_champion_from_mock(champion)
+                data_source = "mock"
+                
             # Build response based on include parameters
             response = {
                 "name": champion_data.name,
@@ -291,15 +554,24 @@ class ChampionService:
                 "difficulty": champion_data.difficulty,
                 "tags": champion_data.tags,
                 "patch": champion_data.patch,
+                "data_source": data_source,  # Track which source was used
                 "data_included": validated_input.include
             }
             
             # Add requested data sections
-            if "stats" in validated_input.include and champion_data.stats:
-                response["stats"] = champion_data.stats.model_dump()
+            if "stats" in validated_input.include:
+                if champion_data.stats:
+                    response["stats"] = champion_data.stats.model_dump()
+                else:
+                    response["stats"] = None
+                    response["stats_note"] = "Stats not available from data source"
             
-            if "abilities" in validated_input.include and champion_data.abilities:
-                response["abilities"] = champion_data.abilities.model_dump()
+            if "abilities" in validated_input.include:
+                if champion_data.abilities:
+                    response["abilities"] = champion_data.abilities.model_dump()
+                else:
+                    response["abilities"] = None
+                    response["abilities_note"] = "Abilities not available from data source"
             
             if "builds" in validated_input.include:
                 # Mock builds data for future implementation
@@ -321,6 +593,7 @@ class ChampionService:
             self.logger.info(
                 "Champion data retrieved successfully",
                 champion=champion,
+                data_source=data_source,
                 sections_included=len([k for k in response.keys() if k in validated_input.include])
             )
             
@@ -368,3 +641,9 @@ class ChampionService:
         """
         champion_key = champion.lower().strip()
         return champion_key in self._mock_data
+    
+    async def cleanup(self):
+        """Cleanup resources (WikiScraper, etc.)"""
+        if self.wiki_scraper:
+            await self.wiki_scraper.close()
+            self.logger.info("WikiScraper resources cleaned up")
