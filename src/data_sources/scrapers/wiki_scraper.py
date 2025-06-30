@@ -962,10 +962,10 @@ class WikiScraper:
         # Strategy 1: Look for headings with ability type
         heading_patterns = {
             'passive': ['passive', 'innate'],
-            'Q': ['q ', 'q-', 'q:', 'ability q', 'first ability'],
-            'W': ['w ', 'w-', 'w:', 'ability w', 'second ability'],
-            'E': ['e ', 'e-', 'e:', 'ability e', 'third ability'],
-            'R': ['r ', 'r-', 'r:', 'ability r', 'ultimate', 'ult']
+            'q': ['q ', 'q-', 'q -', 'q:', 'ability q', 'first ability'],
+            'w': ['w ', 'w-', 'w -', 'w:', 'ability w', 'second ability'],
+            'e': ['e ', 'e-', 'e -', 'e:', 'ability e', 'third ability'],
+            'r': ['r ', 'r-', 'r -', 'r:', 'ability r', 'ultimate', 'ult']
         }
         
         ability_element = None
@@ -978,8 +978,8 @@ class WikiScraper:
                 heading_text = heading.get_text().lower().strip()
                 for pattern in patterns:
                     if pattern in heading_text:
-                        # Found heading, get content after it
-                        content_elements = []
+                        # Found heading, get content after it AND include the heading itself
+                        content_elements = [heading]  # Include the heading for name extraction
                         current = heading.next_sibling
                         
                         while current:
@@ -1062,6 +1062,33 @@ class WikiScraper:
         # Look for bold text, headings, or structured name patterns
         for element in ability_elements:
             if isinstance(element, Tag):
+                # Check for heading text first (most common case)
+                if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                    name = element.get_text().strip()
+                    # Handle patterns like "Passive - Bravado" or "Q - Starlight's Touch"
+                    if " - " in name:
+                        parts = name.split(" - ", 1)
+                        if len(parts) == 2:
+                            ability_name = parts[1].strip()
+                            if len(ability_name) > 1:
+                                return ability_name
+                    # Handle patterns like "Passive: Bravado" 
+                    elif ":" in name:
+                        parts = name.split(":", 1)
+                        if len(parts) == 2:
+                            ability_name = parts[1].strip()
+                            if len(ability_name) > 1:
+                                return ability_name
+                    # If no separator, remove ability type prefix
+                    for prefix in [f"{ability_type}:", f"{ability_type} -", f"{ability_type}"]:
+                        if name.lower().startswith(prefix.lower()):
+                            ability_name = name[len(prefix):].strip()
+                            if len(ability_name) > 1:
+                                return ability_name
+                    # If nothing else works and it's not just the ability type
+                    if len(name) > 3 and name.lower() != ability_type.lower():
+                        return name
+                
                 # Check for bold/strong tags
                 bold_elements = element.find_all(['b', 'strong'])
                 for bold in bold_elements:
@@ -1069,16 +1096,6 @@ class WikiScraper:
                         name = bold.get_text().strip()
                         if len(name) > 3 and not name.lower().startswith(ability_type.lower()):
                             return name
-                
-                # Check for heading text
-                if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
-                    name = element.get_text().strip()
-                    # Remove ability type prefix if present
-                    for prefix in [f"{ability_type}:", f"{ability_type} -", f"{ability_type}:"]:
-                        if name.lower().startswith(prefix.lower()):
-                            name = name[len(prefix):].strip()
-                    if len(name) > 3:
-                        return name
         
         return None
 
@@ -1134,7 +1151,7 @@ class WikiScraper:
             values["damage"] = damage_match.group(1)
         
         # Healing patterns: similar to damage but for heals
-        healing_match = re.search(r'heal(?:ing)?[:\s]*(\d+(?:[/-]\d+)*(?:\s*\([^)]+\))?)', text, re.IGNORECASE)
+        healing_match = re.search(r'heal(?:ing)?.*?(\d+(?:/\d+)*(?:\s*\([^)]+\))?)', text, re.IGNORECASE)
         if healing_match:
             values["healing"] = healing_match.group(1)
         
@@ -1203,48 +1220,53 @@ class WikiScraper:
 
     def _validate_page_structure(self, soup: BeautifulSoup) -> Dict[str, bool]:
         """
-        Validate that expected sections exist and contain meaningful data.
+        Validate the structure and content of a champion page
         
         Args:
             soup: BeautifulSoup object of the champion page
             
         Returns:
-            Dictionary mapping section names to validation results
+            Dictionary with validation results for different sections
         """
-        self.logger.debug("Validating page structure")
+        validation_results = {}
         
-        sections = self.find_champion_data_sections(soup)
-        validation = {}
+        # Check for stats content (infoboxes, stat tables)
+        stats_indicators = soup.find_all(['div', 'table'], class_=re.compile(r'infobox|stats?|champion'))
+        has_stat_text = any(
+            keyword in soup.get_text().lower() 
+            for keyword in ['health', 'mana', 'armor', 'attack damage', 'magic resist']
+        )
+        validation_results['stats'] = len(stats_indicators) > 0 or has_stat_text
         
-        # Validate stats section
-        stats = sections.get('stats')
-        if stats:
-            stats_text = stats.get_text().lower()
-            has_hp = 'hp' in stats_text or 'health' in stats_text
-            has_stats = any(stat in stats_text for stat in ['ad', 'armor', 'attack', 'damage'])
-            validation['stats'] = has_hp and has_stats
-        else:
-            validation['stats'] = False
+        # Check for abilities content
+        ability_headers = soup.find_all(['h2', 'h3', 'h4'], string=re.compile(r'abilit|passive|spell', re.IGNORECASE))
+        has_ability_text = any(
+            keyword in soup.get_text().lower()
+            for keyword in ['passive', 'cooldown', 'ability', 'mana cost']
+        )
+        validation_results['abilities'] = len(ability_headers) > 0 or has_ability_text
         
-        # Validate abilities section
-        abilities = sections.get('abilities')
-        if abilities:
-            abilities_text = abilities.get_text().lower()
-            has_abilities = any(ability in abilities_text for ability in ['passive', 'ability'])
-            validation['abilities'] = has_abilities
-        else:
-            validation['abilities'] = False
+        # Check for overview/description content
+        # Look for content divs and substantial text paragraphs
+        content_divs = soup.find_all(['div', 'p'], id=re.compile(r'content|text'))
+        long_paragraphs = soup.find_all('p')
+        has_substantial_content = any(
+            len(p.get_text().strip()) > 50 for p in long_paragraphs
+        )
+        validation_results['overview'] = len(content_divs) > 0 or has_substantial_content
         
-        # Validate overview section
-        overview = sections.get('overview')
-        if overview:
-            overview_text = overview.get_text().strip()
-            validation['overview'] = len(overview_text) > 50
-        else:
-            validation['overview'] = False
+        # Determine overall page validity
+        # A page is valid if it has at least 2 of the 3 sections
+        valid_sections = sum(validation_results.values())
+        validation_results['page_valid'] = valid_sections >= 2
         
-        self.logger.debug(f"Page structure validation: {validation}")
-        return validation
+        # Log missing sections for debugging
+        missing_sections = [section for section, valid in validation_results.items() 
+                          if not valid and section != 'page_valid']
+        if missing_sections:
+            self.logger.warning(f"Missing sections: {missing_sections}")
+        
+        return validation_results
 
     def parse_champion_stats_safe(self, soup: BeautifulSoup) -> Dict[str, Any]:
         """Enhanced stats parsing with graceful degradation"""
@@ -1294,39 +1316,249 @@ class WikiScraper:
         self.logger.info("Performance metrics reset")
         
     async def cleanup_cache(self) -> int:
-        """Clean up expired cache entries"""
+        """Cleanup expired cache entries"""
         if self.cache_manager:
-            removed_count = self.cache_manager.cleanup_expired()
-            self.logger.info(f"Cache cleanup completed: {removed_count} entries removed")
-            return removed_count
+            return await asyncio.to_thread(self.cache_manager.cleanup_expired)
         return 0
     
     def get_cache_info(self) -> Dict[str, Any]:
-        """Get cache information and statistics"""
-        if not self.cache_manager:
-            return {"cache_enabled": False}
-            
-        cache_info = {
-            "cache_enabled": True,
-            "cache_dir": str(self.cache_manager.cache_dir),
-            "ttl_hours": self.cache_manager.ttl.total_seconds() / 3600,
-            "cache_hits": self.metrics.cache_hits,
-            "cache_misses": self.metrics.cache_misses,
-            "hit_rate": 0.0
-        }
+        """
+        Get cache information and statistics
         
-        total_requests = self.metrics.cache_hits + self.metrics.cache_misses
-        if total_requests > 0:
-            cache_info["hit_rate"] = self.metrics.cache_hits / total_requests
+        Returns:
+            Dictionary with cache statistics
+        """
+        if not self.cache_manager:
+            return {"status": "disabled"}
             
-        # Add metadata info if available
         try:
             metadata = self.cache_manager._load_metadata()
-            cache_info["cached_entries"] = len(metadata)
-        except Exception:
-            cache_info["cached_entries"] = 0
+            total_entries = len(metadata)
             
-        return cache_info
+            # Calculate cache sizes
+            total_size = 0
+            for entry in metadata.values():
+                total_size += entry.get('file_size', 0)
+            
+            return {
+                "status": "enabled",
+                "total_entries": total_entries,
+                "total_size_bytes": total_size,
+                "cache_directory": str(self.cache_manager.cache_dir),
+            "ttl_hours": self.cache_manager.ttl.total_seconds() / 3600,
+                "metrics": asdict(self.metrics)
+            }
+        except Exception as e:
+            self.logger.warning(f"Failed to get cache info: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def normalize_champion_name(self, name: str) -> str:
+        """
+        Enhanced champion name normalization with special character handling
+        
+        Args:
+            name: Champion name to normalize
+            
+        Returns:
+            Normalized champion name
+        """
+        if not name:
+            return ""
+        
+        # Remove extra whitespace and convert to title case
+        normalized = re.sub(r'\s+', ' ', name.strip()).title()
+        
+        # Handle special cases for champion names
+        special_cases = {
+            "Kaisa": "Kai'Sa",
+            "Kai Sa": "Kai'Sa", 
+            "Kha Zix": "Kha'Zix",
+            "Khazix": "Kha'Zix",
+            "Kogmaw": "Kog'Maw",
+            "Kog Maw": "Kog'Maw",
+            "Leblanc": "LeBlanc",
+            "Le Blanc": "LeBlanc",
+            "Dr Mundo": "Dr. Mundo",
+            "Dr. Mundo": "Dr. Mundo",
+            "Aurelion Sol": "Aurelion Sol",
+            "Twisted Fate": "Twisted Fate",
+            "Master Yi": "Master Yi",
+            "Miss Fortune": "Miss Fortune",
+            "Tahm Kench": "Tahm Kench",
+            "Xin Zhao": "Xin Zhao",
+            "Jarvan Iv": "Jarvan IV",
+            "Jarvan 4": "Jarvan IV"
+        }
+        
+        # Check for special cases
+        for variant, correct in special_cases.items():
+            if normalized.lower() == variant.lower():
+                normalized = correct
+                break
+        
+        self.logger.debug(f"Normalized champion name: {name} -> {normalized}")
+        return normalized
+
+    async def discover_champions(self, force_refresh: bool = False) -> list[str]:
+        """
+        Discover available champions from LoL Wiki using validated champion list
+        
+        Args:
+            force_refresh: Force refresh of champion discovery
+            
+        Returns:
+            List of valid champion names
+        """
+        cache_key = "champion_discovery"
+        
+        # Check cache first unless force refresh
+        if not force_refresh and self.cache_manager:
+            cached_champions = self.cache_manager.get_cached_content(f"{cache_key}.json")
+            if cached_champions:
+                try:
+                    import json
+                    champions = json.loads(cached_champions)
+                    self.logger.info(f"Retrieved {len(champions)} champions from cache")
+                    return champions
+                except (json.JSONDecodeError, TypeError):
+                    self.logger.warning("Invalid cached champion data, will refresh")
+        
+        self.logger.info("Discovering champions from LoL Wiki...")
+        
+        # Use our known champion list as base and validate each one
+        known_champions = self._get_fallback_champions()
+        validated_champions = []
+        
+        # Validate each champion exists on the wiki
+        for champion in known_champions:
+            try:
+                # Quick existence check - try to fetch the page
+                exists = await self.validate_champion_exists(champion)
+                if exists:
+                    validated_champions.append(champion)
+                    self.logger.debug(f"✅ Validated champion: {champion}")
+                else:
+                    self.logger.debug(f"❌ Champion not found: {champion}")
+                    
+                # Small delay to respect rate limiting
+                await asyncio.sleep(0.1)
+                
+            except Exception as e:
+                self.logger.warning(f"Error validating champion {champion}: {e}")
+                # Include champion anyway - it's from our known list
+                validated_champions.append(champion)
+        
+        # Sort alphabetically for consistency
+        validated_champions.sort()
+        
+        # Cache the results
+        if self.cache_manager:
+            try:
+                import json
+                cache_content = json.dumps(validated_champions, indent=2)
+                self.cache_manager.cache_content(f"{cache_key}.json", cache_content)
+                self.logger.debug(f"Cached {len(validated_champions)} champions")
+            except Exception as e:
+                self.logger.warning(f"Failed to cache champion list: {e}")
+        
+        self.logger.info(f"Discovered and validated {len(validated_champions)} champions")
+        return validated_champions
+
+    def _get_fallback_champions(self) -> list[str]:
+        """
+        Get a fallback list of known champions when discovery fails
+        
+        Returns:
+            List of known champion names
+        """
+        return [
+            "Aatrox", "Ahri", "Akali", "Alistar", "Amumu", "Anivia", "Annie", "Ashe",
+            "Azir", "Bard", "Blitzcrank", "Brand", "Braum", "Caitlyn", "Camille",
+            "Cassiopeia", "Cho'Gath", "Corki", "Darius", "Diana", "Dr. Mundo", "Draven",
+            "Ekko", "Elise", "Evelynn", "Ezreal", "Fiddlesticks", "Fiora", "Fizz",
+            "Galio", "Gangplank", "Garen", "Gnar", "Gragas", "Graves", "Hecarim",
+            "Heimerdinger", "Illaoi", "Irelia", "Ivern", "Janna", "Jarvan IV", "Jax",
+            "Jayce", "Jhin", "Jinx", "Kai'Sa", "Kalista", "Karma", "Karthus", "Kassadin",
+            "Katarina", "Kayle", "Kayn", "Kennen", "Kha'Zix", "Kindred", "Kled",
+            "Kog'Maw", "LeBlanc", "Lee Sin", "Leona", "Lissandra", "Lucian", "Lulu",
+            "Lux", "Malphite", "Malzahar", "Maokai", "Master Yi", "Miss Fortune",
+            "Mordekaiser", "Morgana", "Nami", "Nasus", "Nautilus", "Nidalee", "Nocturne",
+            "Nunu", "Olaf", "Orianna", "Ornn", "Pantheon", "Poppy", "Pyke", "Qiyana",
+            "Quinn", "Rakan", "Rammus", "Rek'Sai", "Renekton", "Rengar", "Riven",
+            "Rumble", "Ryze", "Samira", "Sejuani", "Senna", "Sett", "Shaco", "Shen",
+            "Shyvana", "Singed", "Sion", "Sivir", "Skarner", "Sona", "Soraka",
+            "Swain", "Sylas", "Syndra", "Tahm Kench", "Taliyah", "Talon", "Taric",
+            "Teemo", "Thresh", "Tristana", "Trundle", "Tryndamere", "Twisted Fate",
+            "Twitch", "Udyr", "Urgot", "Varus", "Vayne", "Veigar", "Vel'Koz", "Vi",
+            "Viktor", "Vladimir", "Volibear", "Warwick", "Wukong", "Xayah", "Xerath",
+            "Xin Zhao", "Yasuo", "Yone", "Yorick", "Yuumi", "Zac", "Zed", "Ziggs",
+            "Zilean", "Zoe", "Zyra"
+        ]
+
+    async def validate_champion_exists(self, champion_name: str) -> bool:
+        """
+        Validate if a champion exists by attempting to fetch their wiki page
+        
+        Args:
+            champion_name: Champion name to validate
+            
+        Returns:
+            True if champion exists and has a valid page, False otherwise
+        """
+        normalized_name = self.normalize_champion_name(champion_name)
+        
+        try:
+            self.logger.debug(f"Validating champion existence: {normalized_name}")
+            
+            # Try to fetch the champion page
+            soup = await self.fetch_champion_page(normalized_name)
+            
+            # Validate page structure indicates it's a real champion page
+            page_validation = self._validate_page_structure(soup)
+            
+            # Consider it valid if it has champion-like content
+            has_champion_content = (
+                page_validation.get('has_stats_content', False) or
+                page_validation.get('has_abilities_content', False) or
+                self._has_champion_indicators(soup)
+            )
+            
+            self.logger.debug(f"Champion {normalized_name} validation result: {has_champion_content}")
+            return has_champion_content
+            
+        except (WikiScraperError, ChampionNotFoundError, httpx.HTTPError) as e:
+            self.logger.debug(f"Champion {normalized_name} validation failed: {e}")
+            return False
+        except Exception as e:
+            self.logger.warning(f"Unexpected error validating champion {normalized_name}: {e}")
+            return False
+
+    def _has_champion_indicators(self, soup: BeautifulSoup) -> bool:
+        """
+        Check if the page has indicators that suggest it's a champion page
+        
+        Args:
+            soup: BeautifulSoup object of the page
+            
+        Returns:
+            True if page appears to be a champion page
+        """
+        # Look for champion-specific keywords in the page content
+        page_text = soup.get_text().lower()
+        
+        champion_indicators = [
+            'health', 'mana', 'attack damage', 'armor', 'magic resist',
+            'passive', 'ability', 'cooldown', 'champion', 'spell'
+        ]
+        
+        # Count how many indicators are present
+        indicator_count = sum(1 for indicator in champion_indicators if indicator in page_text)
+        
+        # Consider it a champion page if it has multiple indicators
+        is_champion_page = indicator_count >= 3
+        
+        self.logger.debug(f"Champion indicators found: {indicator_count}/10, is_champion_page: {is_champion_page}")
+        return is_champion_page
 
 
 # Example usage and testing functions

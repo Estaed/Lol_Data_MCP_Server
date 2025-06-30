@@ -631,7 +631,7 @@ class ChampionService:
     
     async def validate_champion_exists(self, champion: str) -> bool:
         """
-        Check if a champion exists in the service
+        Check if a champion exists using wiki validation with fallback to mock data
         
         Args:
             champion: Champion name to check
@@ -639,8 +639,155 @@ class ChampionService:
         Returns:
             True if champion exists, False otherwise
         """
-        champion_key = champion.lower().strip()
-        return champion_key in self._mock_data
+        if self.enable_wiki and self.wiki_scraper:
+            try:
+                # Use wiki validation for real champion checking
+                exists = await self.wiki_scraper.validate_champion_exists(champion)
+                if exists:
+                    self.logger.debug(f"Champion {champion} validated via wiki")
+                    return True
+                else:
+                    # Fallback to mock data if not found in wiki
+                    normalized_name = self._normalize_champion_name(champion)
+                    mock_exists = normalized_name.lower() in self._mock_data
+                    if mock_exists:
+                        self.logger.debug(f"Champion {champion} found in mock data as fallback")
+                    return mock_exists
+            except Exception as e:
+                self.logger.warning(f"Wiki validation failed for {champion}: {e}, checking mock data")
+                # Fallback to mock data on error
+                normalized_name = self._normalize_champion_name(champion)
+                return normalized_name.lower() in self._mock_data
+        else:
+            # Wiki disabled, use mock data only
+            normalized_name = self._normalize_champion_name(champion)
+            return normalized_name.lower() in self._mock_data
+
+    async def discover_champions(self, force_refresh: bool = False) -> list[str]:
+        """
+        Discover all available champions from wiki or mock data
+        
+        Args:
+            force_refresh: If True, bypass cache and fetch fresh data
+            
+        Returns:
+            List of champion names
+        """
+        if self.enable_wiki and self.wiki_scraper:
+            try:
+                wiki_champions = await self.wiki_scraper.discover_champions(force_refresh)
+                self.logger.info(f"Discovered {len(wiki_champions)} champions from wiki")
+                return wiki_champions
+            except Exception as e:
+                self.logger.warning(f"Wiki champion discovery failed: {e}, using mock data")
+                return self.get_available_champions()
+        else:
+            return self.get_available_champions()
+
+    async def search_champions(self, query: str, limit: int = 10) -> list[str]:
+        """
+        Search for champions by partial name matching
+        
+        Args:
+            query: Search query (partial champion name)
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of matching champion names
+        """
+        if not query or len(query) < 2:
+            return []
+        
+        if self.enable_wiki and self.wiki_scraper:
+            try:
+                # Get all champions from wiki and search them
+                all_champions = await self.wiki_scraper.discover_champions()
+                results = self._search_champion_list(query, all_champions, limit)
+                self.logger.debug(f"Found {len(results)} champions matching '{query}' via wiki")
+                return results
+            except Exception as e:
+                self.logger.warning(f"Wiki champion search failed: {e}, using mock data")
+                # Fallback to mock data search
+                return self._search_mock_champions(query, limit)
+        else:
+            return self._search_mock_champions(query, limit)
+
+    def _search_champion_list(self, query: str, champions: list[str], limit: int = 10) -> list[str]:
+        """
+        Search a list of champions for partial matches
+        
+        Args:
+            query: Search query
+            champions: List of champion names to search
+            limit: Maximum results
+            
+        Returns:
+            List of matching champion names
+        """
+        if not query or len(query) < 2:
+            return []
+        
+        query_lower = query.lower().strip()
+        matches = []
+        
+        for champion_name in champions:
+            score = self._calculate_match_score(query_lower, champion_name.lower())
+            if score > 0:
+                matches.append((champion_name, score))
+        
+        # Sort by score (descending) and return top results
+        matches.sort(key=lambda x: x[1], reverse=True)
+        return [match[0] for match in matches[:limit]]
+
+    def _search_mock_champions(self, query: str, limit: int = 10) -> list[str]:
+        """
+        Search mock champions for partial matches
+        
+        Args:
+            query: Search query
+            limit: Maximum results
+            
+        Returns:
+            List of matching champion names
+        """
+        mock_champion_names = [self._mock_data[key].name for key in self._mock_data.keys()]
+        return self._search_champion_list(query, mock_champion_names, limit)
+
+    def _calculate_match_score(self, query: str, champion_name: str) -> float:
+        """
+        Calculate match score for champion search
+        
+        Args:
+            query: Search query (lowercase)
+            champion_name: Champion name (lowercase)
+            
+        Returns:
+            Match score (higher is better, 0 means no match)
+        """
+        if not query or not champion_name:
+            return 0.0
+        
+        # Exact match gets highest score
+        if query == champion_name:
+            return 100.0
+        
+        # Starts with query gets high score
+        if champion_name.startswith(query):
+            return 90.0 - len(champion_name) * 0.1  # Prefer shorter names
+        
+        # Contains query gets medium score
+        if query in champion_name:
+            # Higher score for earlier position
+            position = champion_name.find(query)
+            return 50.0 - position * 2.0
+        
+        # Word-based matching for multi-word champions
+        words = champion_name.split()
+        for word in words:
+            if word.startswith(query[:min(len(query), 3)]):
+                return 30.0
+        
+        return 0.0
     
     async def cleanup(self):
         """Cleanup resources (WikiScraper, etc.)"""

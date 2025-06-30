@@ -206,6 +206,28 @@ This MCP server is designed to integrate with other LoL development projects:
 **Achievement:** Real champion data from LoL Wiki with intelligent fallback to mock data  
 **Result:** 160+ champions now accessible via MCP tools with 100% reliability  
 
-**🎯 CURRENT TASK:** Task 2.1.8 - Champion Discovery and Validation  
-**Objective:** Update MCP tools to use WikiScraper-enabled ChampionService  
-**Status:** Ready to implement (ChampionService integration complete)
+**📋 Task 2.1.8: Champion Discovery and Validation** - ⚠️ **INCOMPLETE**
+
+**🔴 Critical Issues Found:**
+- **Champion discovery returning 282 entries instead of ~160 actual champions**
+- **False positives included**: "Albert Carranza", "Alternate Universes", "Assist", "Aura", "Auto"
+- **WikiScraper test failures**: Overview section detection and ability name parsing 
+- **Filtering logic insufficient** - needs major improvement to exclude non-champion entries
+
+**✅ Progress Made:**
+- Enhanced page structure validation with 'page_valid' key
+- Improved ability name extraction for "Passive - Bravado" format  
+- Expanded champion name filtering with additional exclusions
+- Integrated champion discovery functionality
+
+**🔧 Next Steps Required:**
+1. **Fix champion filtering** - Reduce false positives to get realistic champion count (~160)
+2. **Resolve test failures** - Fix overview section detection and ability parsing
+3. **Implement proper validation** - Champion existence checking before scraping
+4. **Add search functionality** - Partial champion name matching
+
+**📊 Current MCP Server Status:**
+- ✅ **Infrastructure**: 7 MCP tools registered and accessible via Cursor
+- ✅ **Working Tools**: 4/7 tools returning complete data (57% functional)
+- ❌ **Empty Tools**: 3/7 tools returning placeholder responses (43% incomplete)
+- 🔄 **Data Source**: WikiScraper foundation complete, discovery needs refinement
