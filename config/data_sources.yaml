@@ -6,15 +6,4 @@ sources:
     base_url: "https://wiki.leagueoflegends.com"
     endpoints:
       champion_page: "/wiki/{champion}"
-      item_page: "/wiki/{item}"
     rate_limit_seconds: 1.0
-    
-  riot_data_dragon:
-    name: "Riot Data Dragon"
-    type: "api"
-    base_url: "https://ddragon.leagueoflegends.com"
-    endpoints:
-      versions: "/api/versions.json"
-      champions: "/cdn/{version}/data/en_US/champion.json"
-      items: "/cdn/{version}/data/en_US/item.json"
-    rate_limit_seconds: 0.5

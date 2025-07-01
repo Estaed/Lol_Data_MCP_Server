@@ -23,9 +23,6 @@ redis:
 data_sources:
   wiki_base_url: "https://wiki.leagueoflegends.com"
   wiki_rate_limit: 1.0
-  riot_api_enabled: true
-  riot_api_key: "${DATA_SOURCES_RIOT_API_KEY:-}"
-  riot_api_rate_limit: 0.5
     
 logging:
   level: "INFO"
@@ -36,8 +33,6 @@ logging:
 
 cache:
   ttl_champion_data: 3600
-  ttl_item_data: 3600
-  ttl_search_results: 300
   max_memory_cache_size: 1000
 
 security:

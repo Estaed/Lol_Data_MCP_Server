@@ -22,24 +22,6 @@ class AbilityType(str, Enum):
     R = "R"
 
 
-class ChampionRole(str, Enum):
-    """Valid champion roles"""
-
-    TOP = "top"
-    JUNGLE = "jungle"
-    MID = "mid"
-    ADC = "adc"
-    SUPPORT = "support"
-
-
-class RankTier(str, Enum):
-    """Valid rank tiers for meta data"""
-
-    ALL = "all"
-    DIAMOND_PLUS = "diamond+"
-    MASTER_PLUS = "master+"
-
-
 class MCPToolSchema(BaseModel):
     """Base schema for MCP tool definitions"""
 
@@ -105,42 +87,6 @@ class GetAbilityDetailsInput(BaseModel):
         None, ge=1, le=18, description="Champion level for scaling calculations"
     )
     include_scaling: bool = Field(True, description="Include scaling information")
-
-
-class GetItemDataInput(BaseModel):
-    """Input schema for get_item_data tool"""
-
-    item: str = Field(..., description="Item name or ID")
-    include: List[str] = Field(
-        default=["stats", "cost"], description="Data sections to include"
-    )
-
-    @field_validator("include")
-    @classmethod
-    def validate_include_options(cls, v: List[str]) -> List[str]:
-        valid_options = {"stats", "components", "passive", "cost"}
-        invalid = set(v) - valid_options
-        if invalid:
-            raise ValueError(f"Invalid include options: {invalid}")
-        return v
-
-
-class SearchChampionsInput(BaseModel):
-    """Input schema for search_champions tool"""
-
-    query: Optional[str] = Field(None, description="Search query")
-    role: Optional[ChampionRole] = Field(None, description="Champion role filter")
-    tags: Optional[List[str]] = Field(None, description="Champion tags filter")
-    limit: int = Field(10, ge=1, le=100, description="Maximum results to return")
-
-
-class GetMetaBuildsInput(BaseModel):
-    """Input schema for get_meta_builds tool"""
-
-    champion: str = Field(..., description="Champion name")
-    role: Optional[str] = Field(None, description="Champion role")
-    rank: RankTier = Field(RankTier.ALL, description="Rank tier for statistics")
-    patch: str = Field("current", description="Game patch version")
 
 
 # Tool Implementations
@@ -295,160 +241,6 @@ class GetAbilityDetailsTool(MCPTool):
             }
 
 
-class GetItemDataTool(MCPTool):
-    """Tool for retrieving item information and statistics"""
-
-    def __init__(self) -> None:
-        super().__init__(
-            name="get_item_data",
-            description="Get item information including stats, components, and cost efficiency",
-        )
-
-    def get_schema(self) -> MCPToolSchema:
-        return MCPToolSchema(
-            name=self.name,
-            description=self.description,
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "item": {"type": "string", "description": "Item name or ID"},
-                    "include": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "enum": ["stats", "components", "passive", "cost"],
-                        },
-                        "default": ["stats", "cost"],
-                        "description": "Data sections to include",
-                    },
-                },
-                "required": ["item"],
-            },
-        )
-
-    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute item data retrieval"""
-        validated_params = GetItemDataInput(**params)
-
-        # TODO: Implement actual item data retrieval
-        return {
-            "item": validated_params.item,
-            "data_included": validated_params.include,
-            "stats": {} if "stats" in validated_params.include else None,
-            "components": {} if "components" in validated_params.include else None,
-            "passive": {} if "passive" in validated_params.include else None,
-            "cost": {} if "cost" in validated_params.include else None,
-        }
-
-
-class SearchChampionsTool(MCPTool):
-    """Tool for searching champions by various criteria"""
-
-    def __init__(self) -> None:
-        super().__init__(
-            name="search_champions",
-            description="Search champions by name, role, tags, or other criteria",
-        )
-
-    def get_schema(self) -> MCPToolSchema:
-        return MCPToolSchema(
-            name=self.name,
-            description=self.description,
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query for champion name or description",
-                    },
-                    "role": {
-                        "type": "string",
-                        "enum": ["top", "jungle", "mid", "adc", "support"],
-                        "description": "Champion role filter",
-                    },
-                    "tags": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Champion tags filter",
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "default": 10,
-                        "minimum": 1,
-                        "maximum": 100,
-                        "description": "Maximum results to return",
-                    },
-                },
-            },
-        )
-
-    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute champion search"""
-        validated_params = SearchChampionsInput(**params)
-
-        # TODO: Implement actual search logic
-        return {
-            "query": validated_params.query,
-            "filters": {
-                "role": validated_params.role.value if validated_params.role else None,
-                "tags": validated_params.tags,
-            },
-            "limit": validated_params.limit,
-            "results": [],  # Will contain actual search results
-        }
-
-
-class GetMetaBuildsTool(MCPTool):
-    """Tool for retrieving current meta builds and statistics"""
-
-    def __init__(self) -> None:
-        super().__init__(
-            name="get_meta_builds",
-            description="Get current meta builds, skill orders, and win rate statistics",
-        )
-
-    def get_schema(self) -> MCPToolSchema:
-        return MCPToolSchema(
-            name=self.name,
-            description=self.description,
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "champion": {"type": "string", "description": "Champion name"},
-                    "role": {
-                        "type": "string",
-                        "description": "Champion role for role-specific builds",
-                    },
-                    "rank": {
-                        "type": "string",
-                        "enum": ["all", "diamond+", "master+"],
-                        "default": "all",
-                        "description": "Rank tier for statistics",
-                    },
-                    "patch": {
-                        "type": "string",
-                        "default": "current",
-                        "description": "Game patch version",
-                    },
-                },
-                "required": ["champion"],
-            },
-        )
-
-    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute meta builds retrieval"""
-        validated_params = GetMetaBuildsInput(**params)
-
-        # TODO: Implement actual meta data retrieval
-        return {
-            "champion": validated_params.champion,
-            "role": validated_params.role,
-            "rank": validated_params.rank.value,
-            "patch": validated_params.patch,
-            "builds": [],  # Will contain actual build data
-        }
-
-
 class ToolRegistry:
     """Central registry for all MCP tools"""
 
@@ -461,9 +253,6 @@ class ToolRegistry:
         # Register all LoL tools
         self.register_tool(GetChampionDataTool())
         self.register_tool(GetAbilityDetailsTool())
-        self.register_tool(GetItemDataTool())
-        self.register_tool(SearchChampionsTool())
-        self.register_tool(GetMetaBuildsTool())
 
     def register_tool(self, tool: MCPTool) -> None:
         """Register a new tool"""

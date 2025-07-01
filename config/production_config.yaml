@@ -23,8 +23,6 @@ logging:
   
 cache:
   ttl_champion_data: 7200  # Longer cache times for production
-  ttl_item_data: 7200
-  ttl_search_results: 600
   max_memory_cache_size: 5000
 
 security:

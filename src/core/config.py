@@ -70,10 +70,6 @@ class DataSourcesConfig(BaseSettings):
     )
     wiki_rate_limit: float = Field(default=1.0, description="Wiki rate limit in seconds")
     
-    riot_api_enabled: bool = Field(default=True, description="Enable Riot API")
-    riot_api_key: Optional[str] = Field(default=None, description="Riot API key")
-    riot_api_rate_limit: float = Field(default=0.5, description="Riot API rate limit")
-    
     # Additional data sources configuration
     data_sources_config: Optional[Dict[str, Any]] = Field(default=None, description="Data sources config from YAML")
     mcp_tools_config: Optional[Dict[str, Any]] = Field(default=None, description="MCP tools config from YAML")
@@ -113,8 +109,6 @@ class LoggingConfig(BaseSettings):
 class CacheConfig(BaseSettings):
     """Cache configuration settings."""
     ttl_champion_data: int = Field(default=3600, description="Champion data TTL in seconds")
-    ttl_item_data: int = Field(default=3600, description="Item data TTL in seconds")
-    ttl_search_results: int = Field(default=300, description="Search results TTL in seconds")
     max_memory_cache_size: int = Field(default=1000, description="Max in-memory cache entries")
     
     class Config:
@@ -349,9 +343,7 @@ def create_config_template(config_path: Path, environment: Environment = Environ
         },
         'data_sources': {
             'wiki_base_url': 'https://wiki.leagueoflegends.com',
-            'wiki_rate_limit': 1.0,
-            'riot_api_enabled': True,
-            'riot_api_rate_limit': 0.5
+            'wiki_rate_limit': 1.0
         },
         'logging': {
             'level': 'DEBUG' if environment == Environment.DEVELOPMENT else 'INFO',
@@ -359,8 +351,7 @@ def create_config_template(config_path: Path, environment: Environment = Environ
         },
         'cache': {
             'ttl_champion_data': 3600,
-            'ttl_item_data': 3600,
-            'ttl_search_results': 300
+            'max_memory_cache_size': 1000
         }
     }
     
@@ -368,3 +359,29 @@ def create_config_template(config_path: Path, environment: Environment = Environ
     
     with open(config_path, 'w', encoding='utf-8') as f:
         yaml.dump(template_config, f, default_flow_style=False, sort_keys=False)
+
+
+def default_settings() -> Dict[str, Any]:
+    """
+    Default settings for demonstration and testing.
+    """
+    return {
+        'server': {
+            'host': '127.0.0.1',
+            'port': 8000
+        },
+        'database': {
+            'url': 'sqlite:///./test.db'
+        },
+        'data_sources': {
+            'wiki_base_url': 'https://wiki.leagueoflegends.com',
+            'wiki_rate_limit': 1.0
+        },
+        'logging': {
+            'level': 'DEBUG'
+        },
+        'cache': {
+            'ttl_champion_data': 3600,
+            'max_memory_cache_size': 1000
+        }
+    }

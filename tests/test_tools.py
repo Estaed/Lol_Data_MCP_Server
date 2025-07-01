@@ -10,9 +10,6 @@ from src.mcp_server.tools import (
     tool_registry,
     GetChampionDataTool,
     GetAbilityDetailsTool,
-    GetItemDataTool,
-    SearchChampionsTool,
-    GetMetaBuildsTool,
     GetChampionDataInput,
     GetAbilityDetailsInput,
     AbilityType,
@@ -28,12 +25,9 @@ class TestToolRegistry:
         expected_tools = [
             "get_champion_data",
             "get_ability_details",
-            "get_item_data",
-            "search_champions",
-            "get_meta_builds",
         ]
 
-        assert len(tool_names) == 5
+        assert len(tool_names) == 2
         assert all(tool in tool_names for tool in expected_tools)
 
     def test_get_tool(self):
@@ -46,7 +40,7 @@ class TestToolRegistry:
     def test_list_tools_schemas(self):
         """Test getting all tool schemas"""
         schemas = tool_registry.list_tools()
-        assert len(schemas) == 5
+        assert len(schemas) == 2
 
         for schema in schemas:
             assert hasattr(schema, "name")
@@ -60,20 +54,25 @@ class TestInputValidation:
     def test_get_champion_data_input_validation(self):
         """Test champion data input validation"""
         # Valid input
-        valid_input = GetChampionDataInput(champion="Taric")
+        valid_input = GetChampionDataInput(champion="Taric", patch="current")
         assert valid_input.champion == "Taric"
         assert valid_input.patch == "current"
         assert valid_input.include == ["stats", "abilities"]
 
         # Invalid include options
         with pytest.raises(ValueError):
-            GetChampionDataInput(champion="Taric", include=["invalid_option"])
+            GetChampionDataInput(
+                champion="Taric", patch="current", include=["invalid_option"]
+            )
 
     def test_get_ability_details_input_validation(self):
         """Test ability details input validation"""
         # Valid input
         valid_input = GetAbilityDetailsInput(
-            champion="Taric", ability=AbilityType.Q, level=10
+            champion="Taric",
+            ability=AbilityType.Q,
+            level=10,
+            include_scaling=True,
         )
         assert valid_input.champion == "Taric"
         assert valid_input.ability == AbilityType.Q
@@ -81,7 +80,12 @@ class TestInputValidation:
 
         # Level out of range
         with pytest.raises(ValueError):
-            GetAbilityDetailsInput(champion="Taric", ability=AbilityType.Q, level=20)
+            GetAbilityDetailsInput(
+                champion="Taric",
+                ability=AbilityType.Q,
+                level=20,
+                include_scaling=True,
+            )
 
 
 class TestToolExecution:
@@ -116,44 +120,6 @@ class TestToolExecution:
         assert result["ability"] == "Q"
         assert result["level"] == 10
 
-    @pytest.mark.asyncio
-    async def test_get_item_data_execution(self):
-        """Test item data tool execution"""
-        params = {"item": "Blade of the Ruined King"}
-        result = await tool_registry.execute_tool("get_item_data", params)
-
-        # Verify output structure
-        assert "item" in result
-        assert "data_included" in result
-        assert result["item"] == "Blade of the Ruined King"
-
-    @pytest.mark.asyncio
-    async def test_search_champions_execution(self):
-        """Test search champions tool execution"""
-        params = {"query": "support", "limit": 5}
-        result = await tool_registry.execute_tool("search_champions", params)
-
-        # Verify output structure
-        assert "query" in result
-        assert "filters" in result
-        assert "limit" in result
-        assert "results" in result
-        assert result["query"] == "support"
-        assert result["limit"] == 5
-
-    @pytest.mark.asyncio
-    async def test_get_meta_builds_execution(self):
-        """Test meta builds tool execution"""
-        params = {"champion": "Taric", "rank": "diamond+"}
-        result = await tool_registry.execute_tool("get_meta_builds", params)
-
-        # Verify output structure
-        assert "champion" in result
-        assert "rank" in result
-        assert "builds" in result
-        assert result["champion"] == "Taric"
-        assert result["rank"] == "diamond+"
-
 
 class TestToolSchemas:
     """Test tool schema definitions"""
@@ -161,6 +127,7 @@ class TestToolSchemas:
     def test_get_champion_data_schema(self):
         """Test champion data tool schema"""
         tool = tool_registry.get_tool("get_champion_data")
+        assert tool is not None, "Tool get_champion_data not found"
         schema = tool.get_schema()
 
         assert schema.name == "get_champion_data"
@@ -171,6 +138,7 @@ class TestToolSchemas:
     def test_get_ability_details_schema(self):
         """Test ability details tool schema"""
         tool = tool_registry.get_tool("get_ability_details")
+        assert tool is not None, "Tool get_ability_details not found"
         schema = tool.get_schema()
 
         assert schema.name == "get_ability_details"
@@ -186,6 +154,7 @@ class TestToolSchemas:
         """Test that all tools have valid schema definitions"""
         for tool_name in tool_registry.get_tool_names():
             tool = tool_registry.get_tool(tool_name)
+            assert tool is not None, f"Tool {tool_name} not found in registry"
             schema = tool.get_schema()
 
             # Basic schema validation
@@ -243,6 +212,7 @@ if __name__ == "__main__":
 
             # Test schema validation
             tool = tool_registry.get_tool("get_champion_data")
+            assert tool is not None, "Tool get_champion_data not found for basic test"
             schema = tool.get_schema()
             print(f"✓ Schema validation: {schema.name}")
 

@@ -18,6 +18,4 @@ logging:
   format: "text"  # More readable in development
   
 cache:
-  ttl_champion_data: 300  # Shorter cache times for development
-  ttl_item_data: 300
-  ttl_search_results: 60 
+  ttl_champion_data: 300  # Shorter cache times for development 
