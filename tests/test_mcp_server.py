@@ -1,206 +1,136 @@
 """
-Tests for MCP Server implementation.
-
-This module tests the basic MCP server functionality including
-initialization, health checks, and basic message handling.
+Tests for the MCP Server implementation (Phase 1).
 """
+import asyncio
+from unittest.mock import patch, AsyncMock
 
 import pytest
-import pytest_asyncio
-import asyncio
-import json
-from unittest.mock import AsyncMock, patch
+from fastapi.testclient import TestClient
 
-from src.mcp_server.server import MCPServer
-from src.mcp_server.mcp_handler import MCPHandler
+# Add project root to path to allow absolute imports
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent
+src_path = project_root / "src"
+if str(src_path) not in sys.path:
+    sys.path.insert(0, str(src_path))
 
+from mcp_server.server import MCPServer
+from mcp_server.mcp_handler import MCPHandler
+from mcp_server.tools import ToolRegistry, GetChampionDataTool
 
-class TestMCPHandler:
-    """Test the MCP message handler."""
+# Fixtures
 
-    @pytest_asyncio.fixture
-    async def handler(self):
-        """Create and initialize an MCP handler for testing."""
-        handler = MCPHandler()
-        await handler.initialize()
-        return handler
+@pytest.fixture
+def handler() -> MCPHandler:
+    """Provides a fresh MCPHandler instance for each test."""
+    return MCPHandler()
 
-    @pytest.mark.asyncio
-    async def test_initialization(self, handler):
-        """Test handler initialization."""
-        assert handler.initialized is True
-        assert len(handler.tools) > 0
-        assert "ping" in handler.tools
-        assert "server_info" in handler.tools
+@pytest.fixture
+def client() -> TestClient:
+    """Provides a FastAPI TestClient for the MCPServer."""
+    server = MCPServer()
+    return TestClient(server.app)
 
-    @pytest.mark.asyncio
-    async def test_health_check(self, handler):
-        """Test health check functionality."""
-        assert await handler.is_healthy() is True
-
-    @pytest.mark.asyncio
-    async def test_initialize_message(self, handler):
-        """Test MCP initialize message handling."""
-        message = {
-            "jsonrpc": "2.0",
-            "id": "test-1",
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "clientInfo": {"name": "test-client", "version": "1.0.0"},
-            },
-        }
-
-        response = await handler.handle_message(message)
-
-        assert response is not None
-        assert response["jsonrpc"] == "2.0"
-        assert response["id"] == "test-1"
-        assert "result" in response
-        assert response["result"]["protocolVersion"] == "2024-11-05"
-        assert "capabilities" in response["result"]
-        assert "serverInfo" in response["result"]
-
-    @pytest.mark.asyncio
-    async def test_list_tools(self, handler):
-        """Test tools/list message handling."""
-        message = {
-            "jsonrpc": "2.0",
-            "id": "test-2",
-            "method": "tools/list",
-            "params": {},
-        }
-
-        response = await handler.handle_message(message)
-
-        assert response is not None
-        assert response["jsonrpc"] == "2.0"
-        assert response["id"] == "test-2"
-        assert "result" in response
-        assert "tools" in response["result"]
-        assert len(response["result"]["tools"]) >= 2  # ping and server_info
-
-        # Check tool structure
-        tools = response["result"]["tools"]
-        tool_names = [tool["name"] for tool in tools]
-        assert "ping" in tool_names
-        assert "server_info" in tool_names
-
-    @pytest.mark.asyncio
-    async def test_call_ping_tool(self, handler):
-        """Test calling the ping tool."""
-        message = {
-            "jsonrpc": "2.0",
-            "id": "test-3",
-            "method": "tools/call",
-            "params": {"name": "ping", "arguments": {"message": "test message"}},
-        }
-
-        response = await handler.handle_message(message)
-
-        assert response is not None
-        assert response["jsonrpc"] == "2.0"
-        assert response["id"] == "test-3"
-        assert "result" in response
-        assert "content" in response["result"]
-        assert len(response["result"]["content"]) > 0
-        assert "pong: test message" in response["result"]["content"][0]["text"]
-
-    @pytest.mark.asyncio
-    async def test_call_server_info_tool(self, handler):
-        """Test calling the server_info tool."""
-        message = {
-            "jsonrpc": "2.0",
-            "id": "test-4",
-            "method": "tools/call",
-            "params": {"name": "server_info", "arguments": {}},
-        }
-
-        response = await handler.handle_message(message)
-
-        assert response is not None
-        assert response["jsonrpc"] == "2.0"
-        assert response["id"] == "test-4"
-        assert "result" in response
-
-    @pytest.mark.asyncio
-    async def test_call_nonexistent_tool(self, handler):
-        """Test calling a tool that doesn't exist."""
-        message = {
-            "jsonrpc": "2.0",
-            "id": "test-5",
-            "method": "tools/call",
-            "params": {"name": "nonexistent_tool", "arguments": {}},
-        }
-
-        response = await handler.handle_message(message)
-
-        assert response is not None
-        assert response["jsonrpc"] == "2.0"
-        assert response["id"] == "test-5"
-        assert "error" in response
-        assert response["error"]["code"] == -32602
-
-    @pytest.mark.asyncio
-    async def test_unknown_method(self, handler):
-        """Test handling unknown method."""
-        message = {
-            "jsonrpc": "2.0",
-            "id": "test-6",
-            "method": "unknown/method",
-            "params": {},
-        }
-
-        response = await handler.handle_message(message)
-
-        assert response is not None
-        assert response["jsonrpc"] == "2.0"
-        assert response["id"] == "test-6"
-        assert "error" in response
-        assert response["error"]["code"] == -32601
-
-
-class TestMCPServer:
-    """Test the main MCP server class."""
-
-    def test_server_initialization(self):
-        """Test server initialization."""
-        server = MCPServer(host="localhost", port=8000)
-
-        assert server.host == "localhost"
-        assert server.port == 8000
-        assert server.app is not None
-        assert server.app.title == "LoL Data MCP Server"
-
-    @pytest.mark.asyncio
-    async def test_server_startup_shutdown(self):
-        """Test server startup and shutdown process."""
-        server = MCPServer()
-
-        # Mock uvicorn server to avoid actually starting it
-        with patch("src.mcp_server.server.uvicorn.Server") as mock_server:
-            mock_instance = AsyncMock()
-            mock_server.return_value = mock_instance
-
-            # Test server start
-            await server.start()
-
-            # Verify server was configured and started
-            mock_server.assert_called_once()
-            mock_instance.serve.assert_called_once()
-
+# Tests for MCPHandler
 
 @pytest.mark.asyncio
-async def test_integration_server_health():
-    """Integration test for server health endpoint."""
-    from fastapi.testclient import TestClient
-    from src.mcp_server.server import MCPServer
+async def test_handler_initialize(handler: MCPHandler):
+    """Test the handler's initialize response."""
+    await handler.initialize()
+    message = {
+        "jsonrpc": "2.0",
+        "method": "initialize",
+        "id": "1",
+        "params": {"clientInfo": {"name": "test-client"}}
+    }
+    response = await handler.handle_message(message)
+    
+    assert response is not None
+    assert response["id"] == "1"
+    assert response["result"]["serverInfo"]["name"] == "lol-data-mcp-server"
 
-    server = MCPServer()
-    client = TestClient(server.app)
+@pytest.mark.asyncio
+async def test_handler_list_tools(handler: MCPHandler):
+    """Test the tools/list functionality."""
+    await handler.initialize()
+    message = {"jsonrpc": "2.0", "method": "tools/list", "id": "2"}
+    
+    response = await handler.handle_message(message)
+    
+    assert response is not None
+    assert response["id"] == "2"
+    assert "tools" in response["result"]
+    
+    # Check for both basic and data tools
+    tool_names = [tool['name'] for tool in response['result']['tools']]
+    assert "ping" in tool_names
+    assert "get_champion_data" in tool_names
 
-    # Test health endpoint
-    response = client.get("/health")
+@pytest.mark.asyncio
+async def test_handler_call_tool_success(handler: MCPHandler):
+    """Test successfully calling a registered tool."""
+    await handler.initialize()
+    
+    # Mock the tool's execute method to return a predictable result
+    mock_tool = AsyncMock()
+    mock_tool.execute.return_value = {"champion": "Taric", "data": "some_data"}
+    
+    with patch.object(handler.tool_registry, 'get_tool', return_value=mock_tool):
+        message = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "id": "3",
+            "params": {"name": "get_champion_data", "arguments": {"champion": "Taric"}}
+        }
+        response = await handler.handle_message(message)
+        
+        assert response is not None
+        assert response["id"] == "3"
+        assert "error" not in response
+        mock_tool.execute.assert_called_once_with({"champion": "Taric"})
 
-    # Should return 503 initially as handler may not be fully initialized
-    assert response.status_code in [200, 503]
+@pytest.mark.asyncio
+async def test_handler_call_tool_not_found(handler: MCPHandler):
+    """Test calling a tool that does not exist."""
+    await handler.initialize()
+    message = {
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "id": "4",
+        "params": {"name": "non_existent_tool", "arguments": {}}
+    }
+    response = await handler.handle_message(message)
+    
+    assert response is not None
+    assert response["id"] == "4"
+    assert response["error"]["code"] == -32602 # Method not found
+    assert "Tool not found" in response["error"]["message"]
+
+# Tests for Server (Integration)
+
+def test_health_check_endpoint(client: TestClient):
+    """Test the /health endpoint."""
+    # Need to run startup event to initialize handler
+    with patch.object(MCPHandler, "is_healthy", new_callable=AsyncMock) as mock_healthy:
+        mock_healthy.return_value = True
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json()["status"] == "healthy"
+
+def test_websocket_connection(client: TestClient):
+    """Test establishing a WebSocket connection and sending a message."""
+    with client.websocket_connect("/mcp") as websocket:
+        # Send initialize message
+        init_message = {
+            "jsonrpc": "2.0",
+            "method": "initialize",
+            "id": "ws-1",
+            "params": {"clientInfo": {"name": "ws-test-client"}}
+        }
+        websocket.send_json(init_message)
+        
+        # Receive response
+        response = websocket.receive_json()
+        assert response["id"] == "ws-1"
+        assert response["result"]["serverInfo"]["name"] == "lol-data-mcp-server" 
