@@ -962,7 +962,11 @@ class WikiScraper:
         validated_abilities = self._validate_ability_data(abilities)
         
         self.logger.info(f"Successfully parsed {len(validated_abilities)} abilities")
-        return validated_abilities
+        return {
+            "abilities": validated_abilities,
+            "total_found": len(validated_abilities),
+            "parsing_successful": True
+        }
 
     def _extract_single_ability(self, abilities_section: Tag, ability_type: str) -> Optional[Dict[str, Any]]:
         """
@@ -989,101 +993,73 @@ class WikiScraper:
             "effects": []
         }
         
-        # Strategy 1: Look for headings with ability type
-        heading_patterns = {
-            'passive': ['passive', 'innate'],
-            'q': ['q ', 'q-', 'q -', 'q:', 'ability q', 'first ability'],
-            'w': ['w ', 'w-', 'w -', 'w:', 'ability w', 'second ability'],
-            'e': ['e ', 'e-', 'e -', 'e:', 'ability e', 'third ability'],
-            'r': ['r ', 'r-', 'r -', 'r:', 'ability r', 'ultimate', 'ult']
+        # Map ability types to CSS class patterns used in real wiki
+        ability_class_map = {
+            'passive': 'skill_innate',
+            'q': 'skill_q', 
+            'w': 'skill_w',
+            'e': 'skill_e',
+            'r': 'skill_r'
         }
         
-        ability_element = None
-        patterns = heading_patterns.get(ability_type.lower(), [ability_type.lower()])
+        # Strategy 1: Look for skill containers with specific CSS classes
+        ability_type_lower = ability_type.lower()
+        skill_class = ability_class_map.get(ability_type_lower)
         
-        # Look for headings containing ability patterns
-        headings = abilities_section.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
-        for heading in headings:
-            if isinstance(heading, Tag):
-                heading_text = heading.get_text().lower().strip()
-                for pattern in patterns:
-                    if pattern in heading_text:
-                        # Found heading, get content after it AND include the heading itself
-                        content_elements = [heading]  # Include the heading for name extraction
-                        current = heading.next_sibling
-                        
-                        while current:
-                            if isinstance(current, Tag):
-                                if current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
-                                    break  # Stop at next heading
-                                content_elements.append(current)
-                            current = current.next_sibling
-                        
-                        if content_elements:
-                            ability_element = content_elements
-                            break
-                
-                if ability_element:
-                    break
-        
-        # Strategy 2: Look for ability cards/boxes with class patterns
-        if not ability_element:
-            def ability_class_filter(class_list: Any) -> bool:
-                if not class_list:
-                    return False
-                class_string = ' '.join(class_list).lower()
-                return any(term in class_string for term in ['ability', 'skill', ability_type.lower()])
+        skill_container = None
+        if skill_class:
+            # Look for div with specific skill class (e.g., "skill_q", "skill_w")
+            skill_container = abilities_section.find('div', class_=skill_class)
             
-            ability_cards = abilities_section.find_all('div', class_=ability_class_filter)
-            
-            for card in ability_cards:
-                if isinstance(card, Tag):
-                    card_text = card.get_text().lower()
-                    for pattern in patterns:
-                        if pattern in card_text:
-                            ability_element = [card]
+        # Strategy 2: If specific class not found, look for skill containers with ability indicators
+        if not skill_container:
+            skill_containers = abilities_section.find_all('div', class_='skill')
+            for container in skill_containers:
+                if isinstance(container, Tag):
+                    # Check if container contains indicators for this ability type
+                    container_text = container.get_text().lower()
+                    
+                    # Define ability indicators
+                    indicators = {
+                        'passive': ['passive', 'innate'],
+                        'q': ['q ', 'q:', 'q-', 'first ability'],
+                        'w': ['w ', 'w:', 'w-', 'second ability'],
+                        'e': ['e ', 'e:', 'e-', 'third ability'],
+                        'r': ['r ', 'r:', 'r-', 'ultimate', 'ult ']
+                    }
+                    
+                    ability_indicators = indicators.get(ability_type_lower, [ability_type_lower])
+                    for indicator in ability_indicators:
+                        if indicator in container_text:
+                            skill_container = container
                             break
-                    if ability_element:
+                    
+                    if skill_container:
                         break
         
-        # Strategy 3: Content-based search within entire abilities section
-        if not ability_element:
-            # Look for any element containing the ability type and ability-like content
-            all_elements = abilities_section.find_all(['div', 'p', 'span', 'table'])
-            for element in all_elements:
-                if isinstance(element, Tag):
-                    element_text = element.get_text().lower()
-                    for pattern in patterns:
-                        if pattern in element_text and ('cooldown' in element_text or 'damage' in element_text or 'mana' in element_text):
-                            ability_element = [element]
-                            break
-                    if ability_element:
-                        break
-        
-        if not ability_element:
-            self.logger.warning(f"Could not find {ability_type} ability element")
+        if not skill_container:
+            self.logger.warning(f"Could not find {ability_type} skill container")
             return None
         
-        # Extract data from found elements
-        combined_text = ""
-        for element in ability_element:
-            if isinstance(element, Tag):
-                combined_text += element.get_text() + " "
-        
-        self.logger.debug(f"{ability_type} ability text: {combined_text[:200]}...")
-        
-        # Extract ability name (usually first substantial text or in heading)
-        ability_data["name"] = self._extract_ability_name(ability_element, ability_type)
-        
-        # Extract description
-        ability_data["description"] = self._clean_ability_description(combined_text)
-        
-        # Parse numerical values
-        values = self._parse_ability_values(combined_text)
-        ability_data.update(values)
-        
-        # Extract effects list
-        ability_data["effects"] = self._extract_ability_effects(combined_text)
+        # Extract ability name from the skill container
+        if isinstance(skill_container, Tag):
+            ability_data["name"] = self._extract_ability_name_from_container(skill_container, ability_type)
+            
+            # Extract description from ability-json section
+            ability_data["description"] = self._extract_ability_description_from_container(skill_container)
+            
+            # Parse numerical values from the container content
+            container_text = skill_container.get_text()
+            values = self._parse_ability_values(container_text)
+            ability_data.update(values)
+            
+            # Extract effects list
+            ability_data["effects"] = self._extract_ability_effects(container_text)
+            
+            self.logger.debug(f"Extracted {ability_type} ability: {ability_data['name']}")
+        else:
+            self.logger.warning(f"skill_container is not a Tag for {ability_type}")
+            return None
         
         return ability_data
 
@@ -1186,6 +1162,90 @@ class WikiScraper:
             values["healing"] = healing_match.group(1)
         
         return values
+
+    def _extract_ability_name_from_container(self, skill_container: Tag, ability_type: str) -> Optional[str]:
+        """Extract ability name from skill container using CSS selectors."""
+        # Strategy 1: Look for ability name in specific CSS class
+        name_element = skill_container.find('div', class_='ability-info-stats__ability')
+        if name_element:
+            name = name_element.get_text().strip()
+            if name and len(name) > 1:
+                return name
+        
+        # Strategy 2: Look for name in ability-json data
+        json_element = skill_container.find('div', class_='ability-json')
+        if json_element:
+            try:
+                import json
+                json_data = json.loads(json_element.get_text())
+                if 'name' in json_data:
+                    return json_data['name']
+            except (json.JSONDecodeError, ValueError):
+                pass
+        
+        # Strategy 3: Look for headings within the container
+        headings = skill_container.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+        for heading in headings:
+            if isinstance(heading, Tag):
+                name = heading.get_text().strip()
+                # Handle patterns like "Passive - Bravado" or "Q - Starlight's Touch"
+                if " - " in name:
+                    parts = name.split(" - ", 1)
+                    if len(parts) == 2:
+                        ability_name = parts[1].strip()
+                        if len(ability_name) > 1:
+                            return ability_name
+                # Handle patterns like "Passive: Bravado" 
+                elif ":" in name:
+                    parts = name.split(":", 1)
+                    if len(parts) == 2:
+                        ability_name = parts[1].strip()
+                        if len(ability_name) > 1:
+                            return ability_name
+        
+        # Strategy 4: Look for bold text that could be the name
+        bold_elements = skill_container.find_all(['b', 'strong'])
+        for bold in bold_elements:
+            if isinstance(bold, Tag):
+                name = bold.get_text().strip()
+                if len(name) > 3 and not name.lower().startswith(ability_type.lower()):
+                    return name
+        
+        return None
+    
+    def _extract_ability_description_from_container(self, skill_container: Tag) -> Optional[str]:
+        """Extract ability description from skill container."""
+        # Strategy 1: Look for description in ability-json
+        json_element = skill_container.find('div', class_='ability-json')
+        if json_element:
+            try:
+                import json
+                json_data = json.loads(json_element.get_text())
+                if 'description' in json_data:
+                    return json_data['description']
+            except (json.JSONDecodeError, ValueError):
+                pass
+        
+        # Strategy 2: Look for description in specific CSS classes
+        desc_classes = ['ability-description', 'ability-text', 'skill-description']
+        for class_name in desc_classes:
+            desc_element = skill_container.find('div', class_=class_name)
+            if desc_element:
+                desc = desc_element.get_text().strip()
+                if desc and len(desc) > 20:
+                    return desc
+        
+        # Strategy 3: Extract first substantial paragraph from container
+        paragraphs = skill_container.find_all('p')
+        for p in paragraphs:
+            if isinstance(p, Tag):
+                text = p.get_text().strip()
+                if len(text) > 30 and not re.search(r'\d+/\d+', text):  # Avoid stat lines
+                    return text
+        
+        # Strategy 4: Fallback to container text with cleaning
+        container_text = skill_container.get_text()
+        return self._clean_ability_description(container_text)
 
     def _extract_ability_effects(self, text: str) -> List[str]:
         """Extract list of ability effects from description text."""
