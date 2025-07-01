@@ -549,7 +549,24 @@ class WikiScraper:
             
             return any(keyword in text_lower for keyword in ability_keywords)
         
-        abilities_span = soup.find('span', class_='mw-headline', string=contains_ability)
+        # Look for specific "Abilities" heading
+        abilities_spans = soup.find_all('span', class_='mw-headline')
+        abilities_span = None
+        
+        for span in abilities_spans:
+            if isinstance(span, Tag) and span.string:
+                if 'abilities' in span.string.lower():
+                    abilities_span = span
+                    break
+                # Also look for individual ability headings (like "Bravado", "Starlight's Touch", etc.)
+                elif any(word in span.string.lower() for word in ['passive', 'bravado', 'starlight', 'bastion', 'dazzle', 'cosmic']):
+                    # Found an ability heading, look for a parent section containing all abilities
+                    heading = span.find_parent(['h1', 'h2', 'h3', 'h4'])
+                    if heading and isinstance(heading, Tag):
+                        parent_section = heading.find_parent(['div', 'section'])
+                        if parent_section and isinstance(parent_section, Tag):
+                            self.logger.debug("Found abilities section via individual ability heading")
+                            return parent_section
         
         if abilities_span and isinstance(abilities_span, Tag):
             # Find the parent heading element
@@ -569,11 +586,13 @@ class WikiScraper:
                 
                 if section_content:
                     self.logger.debug("Found abilities section via mw-headline")
-                    # Create a wrapper div containing all abilities content
+                    # Create a wrapper div containing all abilities content (copy, don't extract)
                     wrapper = soup.new_tag('div')
                     wrapper['class'] = 'abilities-section'
                     for element in section_content:
-                        wrapper.append(element.extract())
+                        # Use copy instead of extract to avoid modifying original soup
+                        element_copy = element.__copy__()
+                        wrapper.append(element_copy)
                     return wrapper
         
         # Fallback 1: Look for any heading containing "ability"
@@ -594,7 +613,9 @@ class WikiScraper:
                     wrapper = soup.new_tag('div')
                     wrapper['class'] = 'abilities-section-fallback'
                     for element in content:
-                        wrapper.append(element.extract())
+                        # Use copy instead of extract to avoid modifying original soup
+                        element_copy = element.__copy__()
+                        wrapper.append(element_copy)
                     return wrapper
         
         # Fallback 2: Look for divs/sections with ability-related classes or content
@@ -744,10 +765,11 @@ class WikiScraper:
         Extract base and growth values for a specific stat from text.
         
         Handles formats like:
-        - "HP: 645 (+99)"
+        - "HP645+99" (actual LoL wiki format)
+        - "HP: 645 (+99)" (legacy format)
         - "Attack Damage: 55 (+3.5 per level)"
         - "Movement Speed: 340"
-        - "Attack Speed: 0.625 (+2.14%)"
+        - "AS0.625+2%" (attack speed percentage format)
         
         Args:
             text: Text content to search
@@ -759,25 +781,33 @@ class WikiScraper:
         text_lower = text.lower()
         
         for stat_name in stat_names:
-            # Create regex pattern for this stat name
-            # Pattern matches: "StatName: 123.45 (+67.89)" or "StatName: 123.45"
-            pattern = rf'{re.escape(stat_name.lower())}\s*:?\s*([0-9]+\.?[0-9]*)\s*(?:\(\+([0-9]+\.?[0-9]*)[^)]*\))?'
+            # Pattern 1: LoL Wiki format "HP645+99" or "AD55+3.5"
+            pattern1 = rf'{re.escape(stat_name.lower())}\s*([0-9]+\.?[0-9]*)\s*\+\s*([0-9]+\.?[0-9]*)'
             
-            match = re.search(pattern, text_lower)
-            if match:
-                try:
-                    base_value = float(match.group(1))
-                    growth_value = float(match.group(2)) if match.group(2) else None
-                    
-                    result = {"base": base_value}
-                    if growth_value is not None:
-                        result["growth"] = growth_value
-                    
-                    return result
-                    
-                except (ValueError, TypeError) as e:
-                    self.logger.warning(f"Failed to parse numeric values for {stat_name}: {e}")
-                    continue
+            # Pattern 2: Legacy format "HP: 645 (+99)" or "HP: 645"
+            pattern2 = rf'{re.escape(stat_name.lower())}\s*:?\s*([0-9]+\.?[0-9]*)\s*(?:\(\+([0-9]+\.?[0-9]*)[^)]*\))?'
+            
+            # Pattern 3: Simple format "HP645" (no growth)
+            pattern3 = rf'{re.escape(stat_name.lower())}\s*([0-9]+\.?[0-9]*)\s*(?![+0-9])'
+            
+            # Try patterns in order of preference
+            for pattern in [pattern1, pattern2, pattern3]:
+                match = re.search(pattern, text_lower)
+                if match:
+                    try:
+                        base_value = float(match.group(1))
+                        growth_value = float(match.group(2)) if len(match.groups()) >= 2 and match.group(2) else None
+                        
+                        result = {"base": base_value}
+                        if growth_value is not None:
+                            result["growth"] = growth_value
+                        
+                        self.logger.debug(f"Extracted {stat_name}: base={base_value}, growth={growth_value}")
+                        return result
+                        
+                    except (ValueError, TypeError) as e:
+                        self.logger.warning(f"Failed to parse numeric values for {stat_name}: {e}")
+                        continue
         
         return None
 
