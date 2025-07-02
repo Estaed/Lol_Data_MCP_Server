@@ -8,6 +8,39 @@ A comprehensive MCP (Model Context Protocol) server that provides real-time acce
 
 Create a centralized, intelligent data service that can efficiently provide structured LoL game data to development environments, AI agents, and other applications through the MCP protocol.
 
+## 🆕 NEW FEATURE: Enhanced Stat Formula System
+
+**✅ JUST IMPLEMENTED**: Advanced champion stat calculations with support for complex formulas like Soraka's quadratic growth patterns.
+
+### 🎯 What This Solves
+- **Complex Formulas**: Handles formulas like "605 (+ 88 × M²)" where M² refers to level squared
+- **Accurate Level Scaling**: Precise stat calculations for any champion level (1-18)
+- **Multiple Growth Types**: Linear, quadratic, and constant value formulas
+- **Level-Specific Calculations**: New MCP tool for getting stats at specific levels
+
+### ⚡ Key Features
+- **StatFormula System**: Mathematical representation of champion stat growth
+- **Advanced Parsing**: Regex patterns for complex wiki formulas including quadratic growth
+- **Level Calculations**: Calculate any stat for any level 1-18 using proper formulas
+- **New MCP Tool**: `get_champion_stats_at_level` for level-specific calculations
+- **Progression Analysis**: Full stat progression across all levels
+
+### 📊 Example: Soraka's Quadratic Growth
+```python
+# Soraka's HP: 605 (+ 88 × M²) - where M² = level squared
+@mcp lol-data get_champion_stats_at_level {"champion": "Soraka", "level": 18}
+# Returns: HP calculated using 605 + 88×(18-1)² = 26,037 HP at level 18
+
+@mcp lol-data get_champion_stats_at_level {"champion": "Soraka", "level": 1, "include_progression": true}
+# Returns: Stats for level 1 + full progression for levels 1-18
+```
+
+### 🔧 Technical Implementation
+- **`src/utils/stat_calculator.py`**: Core StatFormula classes and parsing logic
+- **Enhanced WikiScraper**: Updated to parse complex formulas from wiki text
+- **Updated ChampionService**: Level-specific calculations and formula storage
+- **New MCP Tool**: `GetChampionStatsAtLevelTool` for level calculations
+
 ## 🔧 Current Status: **MCP Server Testing & Debugging Session**
 
 **🎯 CURRENT ACTIVITY**: Testing live MCP server functionality and debugging WikiScraper timeout issues (July 1, 2025)
@@ -30,11 +63,12 @@ Create a centralized, intelligent data service that can efficiently provide stru
 
 1. **get_champion_data** - Complete champion information with stats and abilities ✅
 2. **get_ability_details** - Detailed ability information ✅
-3. **get_item_data** - Item stats and information (placeholder) ⚠️
-4. **search_champions** - Champion search functionality (placeholder) ⚠️
-5. **get_meta_builds** - Meta builds and statistics (placeholder) ⚠️
-6. **ping** - Connectivity testing ✅
-7. **server_info** - Server status and statistics ✅
+3. **get_champion_stats_at_level** - Calculate stats at specific level using formulas ✅ **NEW**
+4. **get_item_data** - Item stats and information (placeholder) ⚠️
+5. **search_champions** - Champion search functionality (placeholder) ⚠️
+6. **get_meta_builds** - Meta builds and statistics (placeholder) ⚠️
+7. **ping** - Connectivity testing ✅
+8. **server_info** - Server status and statistics ✅
 
 ## 📁 Current Project Structure
 
@@ -115,6 +149,21 @@ python -m src.mcp_server.stdio_server
 # Returns: Either real wiki data OR reliable mock data (fallback)
 ```
 
+### 🆕 Level-Specific Stat Calculations
+```python
+# Calculate Soraka's stats at level 18 (with quadratic formula)
+@mcp lol-data get_champion_stats_at_level {"champion": "Soraka", "level": 18}
+# Returns: HP: 26,037 using 605 + 88×(18-1)² quadratic formula
+
+# Get progression for all levels 1-18
+@mcp lol-data get_champion_stats_at_level {"champion": "Soraka", "level": 10, "include_progression": true}
+# Returns: Level 10 stats + complete progression table
+
+# Calculate any champion at any level
+@mcp lol-data get_champion_stats_at_level {"champion": "Jinx", "level": 6}
+# Returns: Jinx's stats precisely calculated for level 6
+```
+
 ### Test Connectivity
 ```python
 @mcp lol-data ping {"message": "Hello from Taric AI project!"}
@@ -124,7 +173,7 @@ python -m src.mcp_server.stdio_server
 ### Server Status
 ```python
 @mcp lol-data server_info
-# Returns: Server stats showing 7 tools available
+# Returns: Server stats showing 8 tools available
 ```
 
 ## 🚧 Next Development Phase: Data Expansion

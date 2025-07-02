@@ -760,56 +760,52 @@ class WikiScraper:
         self.logger.info(f"Successfully parsed {len(validated_stats)} champion stats")
         return validated_stats
 
-    def _extract_stat_value(self, text: str, stat_names: list) -> Optional[Dict[str, float]]:
+    def _extract_stat_value(self, text: str, stat_names: list) -> Optional[Dict[str, Any]]:
         """
-        Extract base and growth values for a specific stat from text.
+        Extract stat formula from text using the new StatFormulaParser.
         
-        Handles formats like:
-        - "HP645+99" (actual LoL wiki format)
+        Handles complex formats like:
+        - "605 (+ 88 × M²)" (quadratic growth - Soraka style)
+        - "645 (+ 99 × M)" (linear growth)
+        - "175%" (percentage values) 
+        - "550" (simple values)
         - "HP: 645 (+99)" (legacy format)
-        - "Attack Damage: 55 (+3.5 per level)"
-        - "Movement Speed: 340"
-        - "AS0.625+2%" (attack speed percentage format)
         
         Args:
             text: Text content to search
             stat_names: List of possible names for this stat
             
         Returns:
-            Dictionary with 'base' and optionally 'growth' values, or None if not found
+            Dictionary with 'formula', 'base', and optionally 'growth'/'growth_quadratic' values,
+            or None if not found
         """
-        text_lower = text.lower()
+        from src.utils.stat_calculator import StatFormulaParser
         
-        for stat_name in stat_names:
-            # Pattern 1: LoL Wiki format "HP645+99" or "AD55+3.5"
-            pattern1 = rf'{re.escape(stat_name.lower())}\s*([0-9]+\.?[0-9]*)\s*\+\s*([0-9]+\.?[0-9]*)'
-            
-            # Pattern 2: Legacy format "HP: 645 (+99)" or "HP: 645"
-            pattern2 = rf'{re.escape(stat_name.lower())}\s*:?\s*([0-9]+\.?[0-9]*)\s*(?:\(\+([0-9]+\.?[0-9]*)[^)]*\))?'
-            
-            # Pattern 3: Simple format "HP645" (no growth)
-            pattern3 = rf'{re.escape(stat_name.lower())}\s*([0-9]+\.?[0-9]*)\s*(?![+0-9])'
-            
-            # Try patterns in order of preference
-            for pattern in [pattern1, pattern2, pattern3]:
-                match = re.search(pattern, text_lower)
-                if match:
-                    try:
-                        base_value = float(match.group(1))
-                        growth_value = float(match.group(2)) if len(match.groups()) >= 2 and match.group(2) else None
-                        
-                        result = {"base": base_value}
-                        if growth_value is not None:
-                            result["growth"] = growth_value
-                        
-                        self.logger.debug(f"Extracted {stat_name}: base={base_value}, growth={growth_value}")
-                        return result
-                        
-                    except (ValueError, TypeError) as e:
-                        self.logger.warning(f"Failed to parse numeric values for {stat_name}: {e}")
-                        continue
+        parser = StatFormulaParser()
+        formula = parser.parse_formula(text, stat_names)
         
-        return None
+        if not formula:
+            return None
+        
+        # Return both the formula and legacy format for backwards compatibility
+        result = {
+            "formula": formula,
+            "base": formula.base_value
+        }
+        
+        # Add growth for linear formulas to maintain compatibility
+        if formula.growth_type == "linear":
+            result["growth"] = formula.growth_coefficient
+        elif formula.growth_type == "quadratic":
+            # For quadratic, we'll store the coefficient but note it's quadratic
+            result["growth_quadratic"] = formula.growth_coefficient
+        
+        # Add percentage flag if applicable
+        if formula.is_percentage:
+            result["is_percentage"] = True
+        
+        self.logger.debug(f"Extracted formula for {stat_names[0]}: {formula}")
+        return result
 
     def _normalize_stat_name(self, name: str) -> str:
         """

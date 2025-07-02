@@ -93,6 +93,7 @@ class ChampionService:
         self.logger = structlog.get_logger(__name__)
         self.enable_wiki = enable_wiki
         self._mock_data = self._initialize_mock_data()
+        self._stat_formulas = {}  # Store formulas for level calculations
         
         # Initialize WikiScraper if enabled
         if self.enable_wiki:
@@ -134,8 +135,8 @@ class ChampionService:
     
     def _transform_wiki_stats(self, wiki_stats: Dict[str, Any]) -> Optional[ChampionStats]:
         """
-        Transform WikiScraper stats format to ChampionStats model
-        Only includes stats that are actually available from wiki - no fake defaults
+        Transform WikiScraper stats format to ChampionStats model.
+        Now supports complex formulas including quadratic growth.
         
         Args:
             wiki_stats: Stats from WikiScraper.parse_champion_stats()
@@ -145,6 +146,9 @@ class ChampionService:
         """
         if not wiki_stats:
             return None
+            
+        # Store formulas for later use
+        self._stat_formulas = {}
             
         # Mapping from WikiScraper field names to ChampionStats fields
         stat_mapping = {
@@ -165,6 +169,10 @@ class ChampionService:
             if wiki_key in wiki_stats:
                 wiki_stat = wiki_stats[wiki_key]
                 if isinstance(wiki_stat, dict):
+                    # Store the formula if available for level calculations
+                    if 'formula' in wiki_stat:
+                        self._stat_formulas[base_field] = wiki_stat['formula']
+                    
                     # Extract base value
                     if 'base' in wiki_stat:
                         stats_data[base_field] = float(wiki_stat['base'])
@@ -173,6 +181,15 @@ class ChampionService:
                     # Extract growth value if field exists
                     if growth_field and 'growth' in wiki_stat:
                         stats_data[growth_field] = float(wiki_stat['growth'])
+                        stats_found = True
+                    elif growth_field and 'growth_quadratic' in wiki_stat:
+                        # For quadratic growth, we'll note it but use level 1 calculation for now
+                        # The actual formula is stored in _stat_formulas for level-specific calculations
+                        quadratic_growth = float(wiki_stat['growth_quadratic'])
+                        self.logger.info(f"Found quadratic growth for {base_field}: {quadratic_growth}")
+                        # Store a representative linear equivalent for compatibility
+                        # This is approximate - real calculations should use the formula
+                        stats_data[growth_field] = quadratic_growth * 8.5  # Average for levels 1-18
                         stats_found = True
                 else:
                     # Handle simple numeric values
@@ -185,6 +202,76 @@ class ChampionService:
         
         self.logger.info(f"Successfully transformed {len(stats_data)} stat fields from wiki")
         return ChampionStats(**stats_data)
+    
+    def calculate_stats_at_level(self, level: int) -> Optional[ChampionStats]:
+        """
+        Calculate champion stats at a specific level using stored formulas.
+        
+        Args:
+            level: Champion level (1-18)
+            
+        Returns:
+            ChampionStats object with values calculated for the specified level
+        """
+        if not 1 <= level <= 18:
+            raise ValueError(f"Level must be between 1 and 18, got {level}")
+        
+        if not self._stat_formulas:
+            self.logger.warning("No stat formulas available for level calculations")
+            return None
+        
+        from src.utils.stat_calculator import StatCalculator
+        
+        # Calculate stats at the specified level
+        calculated_stats = StatCalculator.calculate_stats_at_level(self._stat_formulas, level)
+        
+        # Create ChampionStats object with calculated values
+        stats_data = {}
+        
+        # Map the calculated stats to ChampionStats fields
+        stat_field_mapping = {
+            'health': 'health',
+            'mana': 'mana', 
+            'attack_damage': 'attack_damage',
+            'armor': 'armor',
+            'magic_resist': 'magic_resist',
+            'attack_speed': 'attack_speed',
+            'movement_speed': 'movement_speed',
+            'attack_range': 'attack_range'
+        }
+        
+        for formula_key, calculated_value in calculated_stats.items():
+            if formula_key in stat_field_mapping:
+                stats_data[stat_field_mapping[formula_key]] = calculated_value
+        
+        self.logger.info(f"Calculated stats for level {level}: {len(stats_data)} stats")
+        return ChampionStats(**stats_data)
+    
+    def get_stat_progression(self, start_level: int = 1, end_level: int = 18) -> Dict[int, ChampionStats]:
+        """
+        Get stat progression across multiple levels.
+        
+        Args:
+            start_level: Starting level (default: 1)
+            end_level: Ending level (default: 18)
+            
+        Returns:
+            Dictionary mapping level to ChampionStats
+        """
+        if not self._stat_formulas:
+            self.logger.warning("No stat formulas available for progression calculations")
+            return {}
+        
+        progression = {}
+        for level in range(start_level, end_level + 1):
+            try:
+                stats = self.calculate_stats_at_level(level)
+                if stats:
+                    progression[level] = stats
+            except ValueError as e:
+                self.logger.error(f"Failed to calculate stats for level {level}: {e}")
+        
+        return progression
     
     def _transform_wiki_abilities(self, wiki_abilities: Dict[str, Any]) -> Optional[ChampionAbilities]:
         """

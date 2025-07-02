@@ -89,6 +89,14 @@ class GetAbilityDetailsInput(BaseModel):
     include_scaling: bool = Field(True, description="Include scaling information")
 
 
+class GetChampionStatsAtLevelInput(BaseModel):
+    """Input schema for get_champion_stats_at_level tool"""
+    
+    champion: str = Field(..., description="Champion name")
+    level: int = Field(..., ge=1, le=18, description="Champion level (1-18)")
+    include_progression: bool = Field(False, description="Include stats for all levels 1-18")
+
+
 # Tool Implementations
 
 
@@ -241,6 +249,88 @@ class GetAbilityDetailsTool(MCPTool):
             }
 
 
+class GetChampionStatsAtLevelTool(MCPTool):
+    """Tool for calculating champion stats at a specific level using stat formulas"""
+    
+    def __init__(self) -> None:
+        super().__init__(
+            name="get_champion_stats_at_level",
+            description="Calculate champion stats at a specific level using stat formulas",
+        )
+        self._champion_service = None
+    
+    def _get_champion_service(self):
+        """Lazy initialization of champion service to avoid circular imports"""
+        if self._champion_service is None:
+            from src.services.champion_service import ChampionService
+            self._champion_service = ChampionService()
+        return self._champion_service
+
+    def get_schema(self) -> MCPToolSchema:
+        return MCPToolSchema(
+            name=self.name,
+            description=self.description,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "champion": {"type": "string", "description": "Champion name"},
+                    "level": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 18,
+                        "description": "Champion level (1-18)"
+                    },
+                    "include_progression": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Include stats for all levels 1-18"
+                    }
+                },
+                "required": ["champion", "level"],
+            },
+        )
+
+    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute level-specific stat calculation"""
+        try:
+            champion_service = self._get_champion_service()
+            champion_name = params.get("champion", "")
+            level = params.get("level", 1)
+            include_progression = params.get("include_progression", False)
+            
+            # First get the champion data to populate formulas
+            champion_data = await champion_service.get_champion_data(
+                champion=champion_name,
+                include=["stats"]
+            )
+            
+            if not champion_data or "stats" not in champion_data:
+                return {"error": f"Could not retrieve stats for champion '{champion_name}'"}
+            
+            # Calculate stats at the specified level
+            level_stats = champion_service.calculate_stats_at_level(level)
+            
+            result = {
+                "champion": champion_name,
+                "level": level,
+                "stats": level_stats.dict() if level_stats else None
+            }
+            
+            # Include progression if requested
+            if include_progression:
+                progression = champion_service.get_stat_progression(1, 18)
+                result["progression"] = {
+                    str(lvl): stats.dict() for lvl, stats in progression.items()
+                }
+            
+            return result
+            
+        except ValueError as e:
+            return {"error": f"Invalid level: {str(e)}"}
+        except Exception as e:
+            return {"error": f"Failed to calculate champion stats: {str(e)}"}
+
+
 class ToolRegistry:
     """Central registry for all MCP tools"""
 
@@ -253,6 +343,7 @@ class ToolRegistry:
         # Register all LoL tools
         self.register_tool(GetChampionDataTool())
         self.register_tool(GetAbilityDetailsTool())
+        self.register_tool(GetChampionStatsAtLevelTool())
 
     def register_tool(self, tool: MCPTool) -> None:
         """Register a new tool"""

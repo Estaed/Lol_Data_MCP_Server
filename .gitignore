@@ -175,9 +175,6 @@ docs/generated/
 test_results/
 test_data/generated/ 
 
-.cursorrules
-MCP_Implementation_Template.md
-
 # Environment files with sensitive data
 .env
 .env.local
@@ -312,3 +309,8 @@ logs/
 *.temp
 temp/
 tmp/
+
+.cursorrules
+.gitignore
+.gemini
+
