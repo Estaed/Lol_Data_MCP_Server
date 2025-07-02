@@ -18,8 +18,10 @@ class StatFormula:
     
     Supports different growth types:
     - none: Constant value (e.g., "550")
-    - linear: Linear growth (e.g., "645 + 99 × (level-1)")
-    - quadratic: Quadratic growth (e.g., "605 + 88 × (level-1)²")
+    - linear: Linear growth (e.g., "645 + 99 × (level-1)") - most common
+    - quadratic: Quadratic growth (rare, kept for future extensibility)
+    
+    Note: Wiki notation like "M²" is misleading and actually represents linear growth.
     """
     base_value: float
     growth_coefficient: float = 0.0
@@ -120,7 +122,7 @@ class StatFormulaParser:
         Parse complex stat formulas from wiki text.
         
         Supports formats like:
-        - "605 (+ 88 × M²)" - quadratic growth
+        - "605 (+ 88 × M²)" - linear growth (M² notation is misleading in wiki)
         - "645 (+ 99 × M)" - linear growth  
         - "175%" - percentage values
         - "550" - simple values
@@ -149,31 +151,18 @@ class StatFormulaParser:
         # Escape stat name for regex
         escaped_name = re.escape(stat_name.lower())
         
-        # Pattern 1: Quadratic growth "605 (+ 88 × M²)" or variations
-        patterns_quadratic = [
-            rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*\(\+\s*([0-9]+\.?[0-9]*)\s*×\s*m²\)',
-            rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*\(\+\s*([0-9]+\.?[0-9]*)\s*×\s*lvl²\)',
-            rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*\(\+\s*([0-9]+\.?[0-9]*)\s*×\s*level²\)',
-            rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*\(\+\s*([0-9]+\.?[0-9]*)\s*\*\s*m²\)',
-        ]
-        
-        for pattern in patterns_quadratic:
-            match = re.search(pattern, text)
-            if match:
-                try:
-                    base = float(match.group(1))
-                    growth = float(match.group(2))
-                    return StatFormula(base_value=base, growth_coefficient=growth, growth_type="quadratic")
-                except (ValueError, IndexError) as e:
-                    self.logger.warning(f"Failed to parse quadratic formula: {e}")
-                    continue
-        
-        # Pattern 2: Linear growth "605 (+ 88 × M)" or variations
+        # Pattern 1: Linear growth "605 (+ 88 × M)" or variations (PRIORITY - most common)
+        # This includes patterns that might look like M² but are actually just M
         patterns_linear = [
             rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*\(\+\s*([0-9]+\.?[0-9]*)\s*×\s*m\)',
             rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*\(\+\s*([0-9]+\.?[0-9]*)\s*×\s*lvl\)',
             rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*\(\+\s*([0-9]+\.?[0-9]*)\s*×\s*level\)',
             rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*\(\+\s*([0-9]+\.?[0-9]*)\s*\*\s*m\)',
+            # Include M² patterns as linear since they're actually linear growth (image was wrong)
+            rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*\(\+\s*([0-9]+\.?[0-9]*)\s*×\s*m²\)',
+            rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*\(\+\s*([0-9]+\.?[0-9]*)\s*×\s*lvl²\)',
+            rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*\(\+\s*([0-9]+\.?[0-9]*)\s*×\s*level²\)',
+            rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*\(\+\s*([0-9]+\.?[0-9]*)\s*\*\s*m²\)',
         ]
         
         for pattern in patterns_linear:

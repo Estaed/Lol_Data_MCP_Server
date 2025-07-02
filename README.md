@@ -10,7 +10,7 @@ Create a centralized, intelligent data service that can efficiently provide stru
 
 ## 🆕 NEW FEATURE: Enhanced Stat Formula System
 
-**✅ JUST IMPLEMENTED**: Advanced champion stat calculations with support for complex formulas like Soraka's quadratic growth patterns.
+**✅ JUST IMPLEMENTED**: Advanced champion stat calculations with support for complex formulas like Soraka's linear growth patterns (M² notation was misleading).
 
 ### 🎯 What This Solves
 - **Complex Formulas**: Handles formulas like "605 (+ 88 × M²)" where M² refers to level squared
@@ -25,11 +25,11 @@ Create a centralized, intelligent data service that can efficiently provide stru
 - **New MCP Tool**: `get_champion_stats_at_level` for level-specific calculations
 - **Progression Analysis**: Full stat progression across all levels
 
-### 📊 Example: Soraka's Quadratic Growth
+### 📊 Example: Soraka's Linear Growth
 ```python
-# Soraka's HP: 605 (+ 88 × M²) - where M² = level squared
+# Soraka's HP: 605 (+ 88 × M²) - where M² notation is misleading, actually linear
 @mcp lol-data get_champion_stats_at_level {"champion": "Soraka", "level": 18}
-# Returns: HP calculated using 605 + 88×(18-1)² = 26,037 HP at level 18
+# Returns: HP calculated using 605 + 88×(18-1) = 2,101 HP at level 18
 
 @mcp lol-data get_champion_stats_at_level {"champion": "Soraka", "level": 1, "include_progression": true}
 # Returns: Stats for level 1 + full progression for levels 1-18
@@ -151,9 +151,9 @@ python -m src.mcp_server.stdio_server
 
 ### 🆕 Level-Specific Stat Calculations
 ```python
-# Calculate Soraka's stats at level 18 (with quadratic formula)
+# Calculate Soraka's stats at level 18 (with corrected linear formula)
 @mcp lol-data get_champion_stats_at_level {"champion": "Soraka", "level": 18}
-# Returns: HP: 26,037 using 605 + 88×(18-1)² quadratic formula
+# Returns: HP: 2,101 using 605 + 88×(18-1) linear formula
 
 # Get progression for all levels 1-18
 @mcp lol-data get_champion_stats_at_level {"champion": "Soraka", "level": 10, "include_progression": true}

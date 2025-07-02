@@ -183,13 +183,10 @@ class ChampionService:
                         stats_data[growth_field] = float(wiki_stat['growth'])
                         stats_found = True
                     elif growth_field and 'growth_quadratic' in wiki_stat:
-                        # For quadratic growth, we'll note it but use level 1 calculation for now
-                        # The actual formula is stored in _stat_formulas for level-specific calculations
-                        quadratic_growth = float(wiki_stat['growth_quadratic'])
-                        self.logger.info(f"Found quadratic growth for {base_field}: {quadratic_growth}")
-                        # Store a representative linear equivalent for compatibility
-                        # This is approximate - real calculations should use the formula
-                        stats_data[growth_field] = quadratic_growth * 8.5  # Average for levels 1-18
+                        # Note: 'growth_quadratic' is actually linear growth (wiki notation was misleading)
+                        linear_growth = float(wiki_stat['growth_quadratic'])
+                        self.logger.info(f"Found linear growth (from M² notation) for {base_field}: {linear_growth}")
+                        stats_data[growth_field] = linear_growth
                         stats_found = True
                 else:
                     # Handle simple numeric values
