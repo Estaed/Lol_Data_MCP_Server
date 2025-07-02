@@ -275,10 +275,16 @@ class ChampionService:
         stats = None
         abilities = None
         
-        if wiki_stats.get('stats'):
+        # Fix: Handle both success and failure cases for stats
+        if 'error' not in wiki_stats and wiki_stats:  # Success case - stats is the dict itself
+            stats = self._transform_wiki_stats(wiki_stats)
+        elif wiki_stats.get('stats'):  # Failure case - stats wrapped under 'stats' key
             stats = self._transform_wiki_stats(wiki_stats['stats'])
             
-        if wiki_abilities.get('abilities'):
+        # Fix: Handle both success and failure cases for abilities  
+        if 'error' not in wiki_abilities and wiki_abilities.get('abilities'):  # Success case
+            abilities = self._transform_wiki_abilities(wiki_abilities['abilities'])
+        elif wiki_abilities.get('abilities'):  # Failure case - abilities wrapped
             abilities = self._transform_wiki_abilities(wiki_abilities['abilities'])
         
         # Create ChampionData object
