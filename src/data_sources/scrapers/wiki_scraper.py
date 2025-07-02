@@ -306,8 +306,8 @@ class WikiScraper:
         Returns:
             Full URL to the champion's wiki page
         """
-        # Handle special characters and formatting
-        formatted_name = champion_name.replace("'", "%27").replace(" ", "_")
+        # Replace spaces with underscores for wiki URLs, let quote() handle other characters
+        formatted_name = champion_name.replace(" ", "_")
         champion_path = self.CHAMPION_URL_TEMPLATE.format(champion_name=quote(formatted_name))
         url = urljoin(self.BASE_URL, champion_path)
         
