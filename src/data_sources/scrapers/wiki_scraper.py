@@ -1392,6 +1392,95 @@ class WikiScraper:
                 "error_details": str(e)
             }
             
+    def parse_comprehensive_champion_stats(self, soup: BeautifulSoup) -> Dict[str, Any]:
+        """
+        Parse comprehensive champion statistics including all available data:
+        - Basic stats (HP, MP, AD, AR, MR, AS, MS, Range)
+        - Regeneration (HP5, MP5)
+        - Critical and attack details (Crit DMG, Windup%, AS Ratio, etc.)
+        - Unit radius data (Gameplay radius, Selection radius, etc.)
+        
+        Args:
+            soup: BeautifulSoup object of champion page
+            
+        Returns:
+            Dictionary containing comprehensive champion stats
+        """
+        self.logger.info("Parsing comprehensive champion statistics")
+        
+        # Get basic stats first
+        basic_stats = self.parse_champion_stats(soup)
+        
+        # Find the stats section for additional parsing
+        stats_section = self._find_stats_section(soup)
+        if not stats_section:
+            return basic_stats  # Return basic stats if no section found
+            
+        stats_text = stats_section.get_text()
+        comprehensive_stats = basic_stats.copy()
+        
+        # Define comprehensive stat patterns
+        additional_stat_patterns = {
+            # Regeneration stats (HP5/MP5 already covered in basic, but let's be explicit)
+            'hp5': ['hp5', 'hp regen', 'health regen', 'health regeneration', 'hp regeneration'],
+            'mp5': ['mp5', 'mp regen', 'mana regen', 'mana regeneration', 'mp regeneration'],
+            
+            # Critical and attack details
+            'crit_damage': ['crit. dmg', 'crit dmg', 'critical damage', 'crit damage', 'critical dmg'],
+            'windup_percent': ['windup%', 'windup percent', 'windup percentage'],
+            'as_ratio': ['as ratio', 'attack speed ratio'],
+            'bonus_as': ['bonus as', 'bonus attack speed'],
+            'base_as': ['base as', 'base attack speed'],
+            
+            # Missile and projectile
+            'missile_speed': ['missile speed', 'projectile speed'],
+            
+            # Unit radius data
+            'gameplay_radius': ['gameplay radius'],
+            'selection_radius': ['select. radius', 'selection radius', 'select radius'],
+            'pathing_radius': ['pathing radius'],
+            'selection_height': ['select. height', 'selection height', 'select height'],
+            'acquisition_radius': ['acq. radius', 'acquisition radius', 'acq radius'],
+        }
+        
+        # Parse additional stats
+        for stat_key, stat_names in additional_stat_patterns.items():
+            if stat_key not in comprehensive_stats:  # Don't override existing stats
+                stat_data = self._extract_stat_value(stats_text, stat_names)
+                if stat_data:
+                    comprehensive_stats[stat_key] = stat_data
+                    self.logger.debug(f"Found additional stat {stat_key}: {stat_data}")
+        
+        self.logger.info(f"Successfully parsed {len(comprehensive_stats)} comprehensive champion stats")
+        return comprehensive_stats
+    
+    def parse_comprehensive_champion_stats_safe(self, soup: BeautifulSoup) -> Dict[str, Any]:
+        """
+        Safely parse comprehensive champion stats with error handling.
+        
+        Args:
+            soup: BeautifulSoup object of champion page
+            
+        Returns:
+            Dictionary with comprehensive stats or error information
+        """
+        try:
+            stats = self.parse_comprehensive_champion_stats(soup)
+            self.metrics.parsing_successes += 1
+            self.logger.debug("Comprehensive stats parsing successful")
+            return stats
+        except Exception as e:
+            self.logger.warning(f"Comprehensive stats parsing failed: {e}")
+            self.metrics.parsing_failures += 1
+            error_entry = f"{datetime.now().isoformat()}: Comprehensive stats parsing failed: {e}"
+            self.metrics.errors.append(error_entry)
+            return {
+                "error": "Failed to parse comprehensive stats",
+                "partial_data": True,
+                "stats": {},
+                "error_details": str(e)
+            }
+            
     def get_metrics(self) -> Dict[str, Any]:
         """Get current performance metrics"""
         return asdict(self.metrics)

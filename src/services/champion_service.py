@@ -19,8 +19,9 @@ from src.data_sources.scrapers.wiki_scraper import WikiScraper, WikiScraperError
 
 # Response Models
 class ChampionStats(BaseModel):
-    """Champion base statistics model"""
+    """Champion comprehensive statistics model"""
     
+    # Core stats
     health: Optional[float] = Field(None, description="Base health points")
     health_per_level: Optional[float] = Field(None, description="Health gained per level")
     mana: Optional[float] = Field(None, description="Base mana points")
@@ -35,6 +36,29 @@ class ChampionStats(BaseModel):
     attack_range: Optional[float] = Field(None, description="Attack range")
     attack_speed: Optional[float] = Field(None, description="Base attack speed (attacks per second)")
     attack_speed_per_level: Optional[float] = Field(None, description="Attack speed gained per level")
+    
+    # Regeneration stats
+    health_regen: Optional[float] = Field(None, description="Base health regeneration (HP5)")
+    health_regen_per_level: Optional[float] = Field(None, description="HP5 gained per level")
+    mana_regen: Optional[float] = Field(None, description="Base mana regeneration (MP5)")
+    mana_regen_per_level: Optional[float] = Field(None, description="MP5 gained per level")
+    
+    # Critical and attack details
+    critical_damage: Optional[float] = Field(None, description="Critical damage percentage")
+    windup_percent: Optional[float] = Field(None, description="Attack windup percentage")
+    attack_speed_ratio: Optional[float] = Field(None, description="Attack speed ratio")
+    bonus_attack_speed: Optional[float] = Field(None, description="Bonus attack speed")
+    base_attack_speed: Optional[float] = Field(None, description="Base attack speed (detailed)")
+    
+    # Missile and projectile
+    missile_speed: Optional[float] = Field(None, description="Missile/projectile speed")
+    
+    # Unit radius data
+    gameplay_radius: Optional[float] = Field(None, description="Gameplay radius for collision")
+    selection_radius: Optional[float] = Field(None, description="Selection radius for clicking")
+    pathing_radius: Optional[float] = Field(None, description="Pathing radius for movement")
+    selection_height: Optional[float] = Field(None, description="Selection height for clicking")
+    acquisition_radius: Optional[float] = Field(None, description="Acquisition radius for targeting")
 
 
 class AbilityInfo(BaseModel):
@@ -150,8 +174,9 @@ class ChampionService:
         # Store formulas for later use
         self._stat_formulas = {}
             
-        # Mapping from WikiScraper field names to ChampionStats fields
+        # Comprehensive mapping from WikiScraper field names to ChampionStats fields
         stat_mapping = {
+            # Core stats
             'hp': ('health', 'health_per_level'),
             'mp': ('mana', 'mana_per_level'),
             'ad': ('attack_damage', 'attack_damage_per_level'),
@@ -159,7 +184,28 @@ class ChampionService:
             'mr': ('magic_resist', 'magic_resist_per_level'),
             'attack_speed': ('attack_speed', 'attack_speed_per_level'),
             'movement_speed': ('movement_speed', None),
-            'attack_range': ('attack_range', None)
+            'range': ('attack_range', None),
+            
+            # Regeneration stats
+            'hp5': ('health_regen', 'health_regen_per_level'),
+            'mp5': ('mana_regen', 'mana_regen_per_level'),
+            
+            # Critical and attack details
+            'crit_damage': ('critical_damage', None),
+            'windup_percent': ('windup_percent', None),
+            'as_ratio': ('attack_speed_ratio', None),
+            'bonus_as': ('bonus_attack_speed', None),
+            'base_as': ('base_attack_speed', None),
+            
+            # Missile and projectile
+            'missile_speed': ('missile_speed', None),
+            
+            # Unit radius data
+            'gameplay_radius': ('gameplay_radius', None),
+            'selection_radius': ('selection_radius', None),
+            'pathing_radius': ('pathing_radius', None),
+            'selection_height': ('selection_height', None),
+            'acquisition_radius': ('acquisition_radius', None),
         }
         
         stats_data = {}
@@ -351,8 +397,8 @@ class ChampionService:
         # Fetch and parse the champion page
         soup = await self.wiki_scraper.fetch_champion_page(normalized_name)
         
-        # Parse stats and abilities safely
-        wiki_stats = self.wiki_scraper.parse_champion_stats_safe(soup)
+        # Parse comprehensive stats and abilities safely
+        wiki_stats = self.wiki_scraper.parse_comprehensive_champion_stats_safe(soup)
         wiki_abilities = self.wiki_scraper.parse_champion_abilities_safe(soup)
         
         # Transform to ChampionData format (may be None if no data available)

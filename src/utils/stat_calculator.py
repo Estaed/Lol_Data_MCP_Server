@@ -151,7 +151,24 @@ class StatFormulaParser:
         # Escape stat name for regex
         escaped_name = re.escape(stat_name.lower())
         
-        # Pattern 1: Linear growth "605 (+ 88 × M)" or variations (PRIORITY - most common)
+        # Pattern 1: Wiki compact format "HP605+88" (PRIORITY - actual wiki format)
+        patterns_wiki_compact = [
+            rf'{escaped_name}\s*([0-9]+\.?[0-9]*)\+([0-9]+\.?[0-9]*)',
+            rf'{escaped_name}\s*([0-9]+\.?[0-9]*)\s*\+\s*([0-9]+\.?[0-9]*)',
+        ]
+        
+        for pattern in patterns_wiki_compact:
+            match = re.search(pattern, text)
+            if match:
+                try:
+                    base = float(match.group(1))
+                    growth = float(match.group(2))
+                    return StatFormula(base_value=base, growth_coefficient=growth, growth_type="linear")
+                except (ValueError, IndexError) as e:
+                    self.logger.warning(f"Failed to parse wiki compact formula: {e}")
+                    continue
+        
+        # Pattern 2: Linear growth "605 (+ 88 × M)" or variations (legacy support)
         # This includes patterns that might look like M² but are actually just M
         patterns_linear = [
             rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*\(\+\s*([0-9]+\.?[0-9]*)\s*×\s*m\)',
@@ -176,15 +193,21 @@ class StatFormulaParser:
                     self.logger.warning(f"Failed to parse linear formula: {e}")
                     continue
         
-        # Pattern 3: Percentage values "175%"
-        pattern_percentage = rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)%'
-        match = re.search(pattern_percentage, text)
-        if match:
-            try:
-                value = float(match.group(1))
-                return StatFormula(base_value=value, is_percentage=True)
-            except (ValueError, IndexError) as e:
-                self.logger.warning(f"Failed to parse percentage: {e}")
+        # Pattern 3: Percentage values "175%" and wiki compact "Crit. DMG175%"
+        patterns_percentage = [
+            rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)%',
+            rf'{escaped_name}\s*([0-9]+\.?[0-9]*)%',  # Wiki compact format
+        ]
+        
+        for pattern in patterns_percentage:
+            match = re.search(pattern, text)
+            if match:
+                try:
+                    value = float(match.group(1))
+                    return StatFormula(base_value=value, is_percentage=True)
+                except (ValueError, IndexError) as e:
+                    self.logger.warning(f"Failed to parse percentage: {e}")
+                    continue
         
         # Pattern 4: Legacy format "HP: 645 (+99)" - linear growth
         pattern_legacy = rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*\(\+\s*([0-9]+\.?[0-9]*)\s*(?:per\s+level)?\)'
@@ -197,15 +220,21 @@ class StatFormulaParser:
             except (ValueError, IndexError) as e:
                 self.logger.warning(f"Failed to parse legacy format: {e}")
         
-        # Pattern 5: Simple values "550" (must not be followed by +, ×, %, etc.)
-        pattern_simple = rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*(?![+×%*])'
-        match = re.search(pattern_simple, text)
-        if match:
-            try:
-                value = float(match.group(1))
-                return StatFormula(base_value=value)
-            except (ValueError, IndexError) as e:
-                self.logger.warning(f"Failed to parse simple value: {e}")
+        # Pattern 5: Simple values "550" and wiki compact "MS325" (must not be followed by +, ×, %, etc.)
+        patterns_simple = [
+            rf'{escaped_name}\s*:?\s*([0-9]+\.?[0-9]*)\s*(?![+×%*])',  # Legacy format
+            rf'{escaped_name}\s*([0-9]+\.?[0-9]*)\s*(?![+×%*])',      # Wiki compact format
+        ]
+        
+        for pattern in patterns_simple:
+            match = re.search(pattern, text)
+            if match:
+                try:
+                    value = float(match.group(1))
+                    return StatFormula(base_value=value)
+                except (ValueError, IndexError) as e:
+                    self.logger.warning(f"Failed to parse simple value: {e}")
+                    continue
         
         return None
     
