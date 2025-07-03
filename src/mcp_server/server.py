@@ -7,7 +7,6 @@ for serving LoL champion, item, and game data to development environments and AI
 
 import asyncio
 import json
-import signal
 import sys
 from contextlib import asynccontextmanager
 
@@ -68,7 +67,6 @@ class MCPServer:
         )
 
         self._setup_routes()
-        self._setup_signal_handlers()
 
     def _setup_routes(self):
         """Set up FastAPI routes."""
@@ -177,15 +175,7 @@ class MCPServer:
         except Exception as e:
             logger.error("Failed to send error response", error=str(e))
 
-    def _setup_signal_handlers(self):
-        """Set up signal handlers for graceful shutdown."""
 
-        def signal_handler(signum, frame):
-            logger.info("Received shutdown signal", signal=signum)
-            sys.exit(0)
-
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
 
     async def start(self):
         """Start the MCP server."""

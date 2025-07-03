@@ -625,9 +625,6 @@ class ChampionService:
             ChampionNotFoundError: If champion is not found in any data source
             ValidationError: If input parameters are invalid
         """
-        if include is None:
-            include = ["stats", "abilities"]
-        
         # Log the request
         self.logger.info(
             "Champion data request",

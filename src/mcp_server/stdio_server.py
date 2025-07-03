@@ -12,19 +12,7 @@ import sys
 import os
 from pathlib import Path
 
-# Add parent directories to path for proper imports
-current_dir = Path(__file__).resolve().parent
-src_dir = current_dir.parent
-project_root = src_dir.parent
-
-sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(src_dir))
-
-try:
-    from mcp_server.mcp_handler import MCPHandler
-except ImportError:
-    # Fallback import path
-    from src.mcp_server.mcp_handler import MCPHandler
+from src.mcp_server.mcp_handler import MCPHandler
 
 import structlog
 

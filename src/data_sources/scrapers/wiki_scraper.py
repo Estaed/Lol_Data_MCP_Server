@@ -258,27 +258,27 @@ class WikiScraper:
             self.logger.info("HTTP client initialized")
     
     async def close(self) -> None:
-        """Close the HTTP client"""
+        """Close HTTP client and cleanup resources"""
         if self._client:
             await self._client.aclose()
-            self._client = None
             self.logger.info("HTTP client closed")
     
     def _update_metrics(self, start_time: float, success: bool, cache_hit: bool = False, error: Optional[str] = None) -> None:
-        """Update performance metrics"""
+        """Update request performance metrics (not parsing metrics)"""
         request_time = time.time() - start_time
         self.metrics.total_requests += 1
         self.metrics.total_request_time += request_time
         self.metrics.avg_request_time = self.metrics.total_request_time / self.metrics.total_requests
-        
-        if success:
-            self.metrics.parsing_successes += 1
+
+        if cache_hit:
+            self.metrics.cache_hits += 1
         else:
-            self.metrics.parsing_failures += 1
-            if error:
-                error_entry = f"{datetime.now().isoformat()}: {error}"
-                self.metrics.errors.append(error_entry)
-                
+            self.metrics.cache_misses += 1
+
+        if not success and error:
+            error_entry = f"{datetime.now().isoformat()}: {error}"
+            self.metrics.errors.append(error_entry)
+
         self.logger.debug(f"Updated metrics: requests={self.metrics.total_requests}, "
                          f"successes={self.metrics.parsing_successes}, "
                          f"cache_hits={self.metrics.cache_hits}, "

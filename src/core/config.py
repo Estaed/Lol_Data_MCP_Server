@@ -6,6 +6,7 @@ It supports loading configuration from environment variables, YAML files, and pr
 validation and fallbacks for different environments.
 """
 
+import logging
 import os
 import yaml
 from enum import Enum
@@ -149,8 +150,6 @@ class Settings(BaseSettings):
     def load_config_files(cls, values):
         """Load configuration from YAML files with environment-specific overrides."""
         config_dir = values.get('config_dir')
-        if not config_dir:
-            config_dir = Path(__file__).parent.parent / "config"
         
         environment = values.get('environment', Environment.DEVELOPMENT)
         if isinstance(environment, str):
@@ -169,7 +168,7 @@ class Settings(BaseSettings):
                 config_data = loader.load_yaml_with_env(base_config_path)
             except Exception as e:
                 # Fallback to defaults if config file can't be loaded
-                print(f"Warning: Could not load base config file {base_config_path}: {e}")
+                logging.warning(f"Could not load base config file {base_config_path}: {e}")
         
         # Load data sources configuration with environment variables
         data_sources_path = config_dir / "data_sources.yaml"
@@ -190,7 +189,7 @@ class Settings(BaseSettings):
                         
                 config_data['data_sources']['data_sources_config'] = data_sources_config
             except Exception as e:
-                print(f"Warning: Could not load data sources config file {data_sources_path}: {e}")
+                logging.warning(f"Could not load data sources config file {data_sources_path}: {e}")
         
         # Load MCP tools configuration with environment variables
         mcp_tools_path = config_dir / "mcp_tools.yaml"
@@ -201,7 +200,7 @@ class Settings(BaseSettings):
                     config_data['data_sources'] = {}
                 config_data['data_sources']['mcp_tools_config'] = mcp_tools_config
             except Exception as e:
-                print(f"Warning: Could not load MCP tools config file {mcp_tools_path}: {e}")
+                logging.warning(f"Could not load MCP tools config file {mcp_tools_path}: {e}")
         
         # Load environment-specific configuration with environment variables
         env_config_path = config_dir / f"{environment.value}_config.yaml"
@@ -211,7 +210,7 @@ class Settings(BaseSettings):
                 # Merge environment-specific config
                 config_data = _deep_merge(config_data, env_config)
             except Exception as e:
-                print(f"Warning: Could not load environment config file {env_config_path}: {e}")
+                logging.warning(f"Could not load environment config file {env_config_path}: {e}")
         
         # Merge with provided values (environment variables take precedence)
         merged_values = _deep_merge(config_data, values)
@@ -293,7 +292,7 @@ def get_settings() -> Settings:
         try:
             _settings = Settings()
         except Exception as e:
-            print(f"Error loading settings: {e}")
+            logging.error(f"Error loading settings: {e}")
             # Create settings with defaults as fallback
             _settings = Settings.parse_obj({})
     
@@ -315,73 +314,4 @@ def reload_settings() -> Settings:
     return get_settings()
 
 
-def create_config_template(config_path: Path, environment: Environment = Environment.DEVELOPMENT) -> None:
-    """
-    Create a configuration template file.
-    
-    Args:
-        config_path: Path where to create the config template
-        environment: Environment type for the template
-    """
-    template_config = {
-        'environment': environment.value,
-        'server': {
-            'host': '0.0.0.0',
-            'port': 8000,
-            'debug': environment == Environment.DEVELOPMENT,
-            'workers': 1 if environment == Environment.DEVELOPMENT else 4
-        },
-        'database': {
-            'url': f'postgresql://lol_user:lol_pass@localhost:5432/lol_data_{environment.value}',
-            'pool_size': 5 if environment == Environment.DEVELOPMENT else 20,
-            'max_overflow': 10 if environment == Environment.DEVELOPMENT else 40,
-            'echo': environment == Environment.DEVELOPMENT
-        },
-        'redis': {
-            'url': f'redis://localhost:6379/{environment.value}',
-            'max_connections': 5 if environment == Environment.DEVELOPMENT else 20
-        },
-        'data_sources': {
-            'wiki_base_url': 'https://wiki.leagueoflegends.com',
-            'wiki_rate_limit': 1.0
-        },
-        'logging': {
-            'level': 'DEBUG' if environment == Environment.DEVELOPMENT else 'INFO',
-            'format': 'text' if environment == Environment.DEVELOPMENT else 'json'
-        },
-        'cache': {
-            'ttl_champion_data': 3600,
-            'max_memory_cache_size': 1000
-        }
-    }
-    
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    with open(config_path, 'w', encoding='utf-8') as f:
-        yaml.dump(template_config, f, default_flow_style=False, sort_keys=False)
 
-
-def default_settings() -> Dict[str, Any]:
-    """
-    Default settings for demonstration and testing.
-    """
-    return {
-        'server': {
-            'host': '127.0.0.1',
-            'port': 8000
-        },
-        'database': {
-            'url': 'sqlite:///./test.db'
-        },
-        'data_sources': {
-            'wiki_base_url': 'https://wiki.leagueoflegends.com',
-            'wiki_rate_limit': 1.0
-        },
-        'logging': {
-            'level': 'DEBUG'
-        },
-        'cache': {
-            'ttl_champion_data': 3600,
-            'max_memory_cache_size': 1000
-        }
-    }

@@ -103,20 +103,13 @@ class GetChampionStatsAtLevelInput(BaseModel):
 class GetChampionDataTool(MCPTool):
     """Tool for retrieving comprehensive champion information"""
 
-    def __init__(self) -> None:
+    def __init__(self, champion_service=None) -> None:
         super().__init__(
             name="get_champion_data",
             description="Get comprehensive champion information including stats, abilities, and builds",
         )
-        # Champion service will be initialized lazily to avoid circular imports
-        self._champion_service = None
-    
-    def _get_champion_service(self):
-        """Lazy initialization of champion service to avoid circular imports"""
-        if self._champion_service is None:
-            from src.services.champion_service import ChampionService
-            self._champion_service = ChampionService()
-        return self._champion_service
+        # Champion service injected via dependency injection
+        self._champion_service = champion_service
 
     def get_schema(self) -> MCPToolSchema:
         return MCPToolSchema(
@@ -147,9 +140,11 @@ class GetChampionDataTool(MCPTool):
 
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute champion data retrieval using ChampionService"""
-        # Use the champion service to get actual data
-        champion_service = self._get_champion_service()
-        result = await champion_service.get_champion_data(
+        # Use the injected champion service to get actual data
+        if not self._champion_service:
+            raise RuntimeError("ChampionService not properly injected")
+        
+        result = await self._champion_service.get_champion_data(
             champion=params.get("champion", ""),
             patch=params.get("patch", "current"),
             include=params.get("include", ["stats", "abilities"])
@@ -167,20 +162,13 @@ class GetChampionDataTool(MCPTool):
 class GetAbilityDetailsTool(MCPTool):
     """Tool for retrieving detailed ability information"""
 
-    def __init__(self) -> None:
+    def __init__(self, champion_service=None) -> None:
         super().__init__(
             name="get_ability_details",
             description="Get detailed ability information including damage, cooldowns, and scaling",
         )
-        # Champion service will be initialized lazily to avoid circular imports
-        self._champion_service = None
-    
-    def _get_champion_service(self):
-        """Lazy initialization of champion service to avoid circular imports"""
-        if self._champion_service is None:
-            from src.services.champion_service import ChampionService
-            self._champion_service = ChampionService()
-        return self._champion_service
+        # Champion service injected via dependency injection
+        self._champion_service = champion_service
 
     def get_schema(self) -> MCPToolSchema:
         return MCPToolSchema(
@@ -216,9 +204,11 @@ class GetAbilityDetailsTool(MCPTool):
         validated_params = GetAbilityDetailsInput(**params)
         
         try:
-            # Use WikiScraper-enabled ChampionService instead of hardcoded data
-            champion_service = self._get_champion_service()
-            champion_data = await champion_service.get_champion_data(
+            # Use the injected champion service to get actual data
+            if not self._champion_service:
+                raise RuntimeError("ChampionService not properly injected")
+            
+            champion_data = await self._champion_service.get_champion_data(
                 champion=validated_params.champion,
                 include=["abilities"]  # Only need abilities for this tool
             )
@@ -252,19 +242,13 @@ class GetAbilityDetailsTool(MCPTool):
 class GetChampionStatsAtLevelTool(MCPTool):
     """Tool for calculating champion stats at a specific level using stat formulas"""
     
-    def __init__(self) -> None:
+    def __init__(self, champion_service=None) -> None:
         super().__init__(
             name="get_champion_stats_at_level",
             description="Calculate champion stats at a specific level using stat formulas",
         )
-        self._champion_service = None
-    
-    def _get_champion_service(self):
-        """Lazy initialization of champion service to avoid circular imports"""
-        if self._champion_service is None:
-            from src.services.champion_service import ChampionService
-            self._champion_service = ChampionService()
-        return self._champion_service
+        # Champion service injected via dependency injection
+        self._champion_service = champion_service
 
     def get_schema(self) -> MCPToolSchema:
         return MCPToolSchema(
@@ -293,13 +277,16 @@ class GetChampionStatsAtLevelTool(MCPTool):
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute level-specific stat calculation"""
         try:
-            champion_service = self._get_champion_service()
+            # Use the injected champion service
+            if not self._champion_service:
+                raise RuntimeError("ChampionService not properly injected")
+            
             champion_name = params.get("champion", "")
             level = params.get("level", 1)
             include_progression = params.get("include_progression", False)
             
             # First get the champion data to populate formulas
-            champion_data = await champion_service.get_champion_data(
+            champion_data = await self._champion_service.get_champion_data(
                 champion=champion_name,
                 include=["stats"]
             )
@@ -308,7 +295,7 @@ class GetChampionStatsAtLevelTool(MCPTool):
                 return {"error": f"Could not retrieve stats for champion '{champion_name}'"}
             
             # Calculate stats at the specified level
-            level_stats = champion_service.calculate_stats_at_level(level)
+            level_stats = self._champion_service.calculate_stats_at_level(level)
             
             result = {
                 "champion": champion_name,
@@ -318,7 +305,7 @@ class GetChampionStatsAtLevelTool(MCPTool):
             
             # Include progression if requested
             if include_progression:
-                progression = champion_service.get_stat_progression(1, 18)
+                progression = self._champion_service.get_stat_progression(1, 18)
                 result["progression"] = {
                     str(lvl): stats.dict() for lvl, stats in progression.items()
                 }
@@ -340,10 +327,14 @@ class ToolRegistry:
 
     def _register_default_tools(self) -> None:
         """Register the default set of tools"""
-        # Register all LoL tools
-        self.register_tool(GetChampionDataTool())
-        self.register_tool(GetAbilityDetailsTool())
-        self.register_tool(GetChampionStatsAtLevelTool())
+        # Create a single ChampionService instance for dependency injection
+        from src.services.champion_service import ChampionService
+        champion_service = ChampionService()
+        
+        # Register all LoL tools with injected ChampionService
+        self.register_tool(GetChampionDataTool(champion_service))
+        self.register_tool(GetAbilityDetailsTool(champion_service))
+        self.register_tool(GetChampionStatsAtLevelTool(champion_service))
 
     def register_tool(self, tool: MCPTool) -> None:
         """Register a new tool"""
