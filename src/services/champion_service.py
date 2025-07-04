@@ -9,12 +9,31 @@ champion-related operations with real wiki data and mock fallback.
 import logging
 import re
 import httpx
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import structlog
 
-from pydantic import BaseModel, Field, ValidationError
-from src.mcp_server.tools import GetChampionDataInput
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from src.data_sources.scrapers.wiki_scraper import WikiScraper, WikiScraperError, ChampionNotFoundError as WikiChampionNotFoundError
+
+
+# Input Models (moved from tools.py to break circular import)
+class GetChampionDataInput(BaseModel):
+    """Input schema for get_champion_data tool"""
+
+    champion: str = Field(..., description="Champion name")
+    patch: str = Field("current", description="Game patch version")
+    include: List[str] = Field(
+        default=["stats", "abilities"], description="Data sections to include"
+    )
+
+    @field_validator("include")
+    @classmethod
+    def validate_include_options(cls, v: List[str]) -> List[str]:
+        valid_options = {"stats", "abilities", "builds", "history"}
+        invalid = set(v) - valid_options
+        if invalid:
+            raise ValueError(f"Invalid include options: {invalid}")
+        return v
 
 
 # Response Models

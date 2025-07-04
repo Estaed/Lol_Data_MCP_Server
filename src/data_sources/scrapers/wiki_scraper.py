@@ -590,8 +590,8 @@ class WikiScraper:
                     wrapper = soup.new_tag('div')
                     wrapper['class'] = 'abilities-section'
                     for element in section_content:
-                        # Use copy instead of extract to avoid modifying original soup
-                        element_copy = element.__copy__()
+                        # Create a clean copy by parsing the string representation
+                        element_copy = BeautifulSoup(str(element), 'html.parser').contents[0]
                         wrapper.append(element_copy)
                     return wrapper
         
@@ -613,8 +613,8 @@ class WikiScraper:
                     wrapper = soup.new_tag('div')
                     wrapper['class'] = 'abilities-section-fallback'
                     for element in content:
-                        # Use copy instead of extract to avoid modifying original soup
-                        element_copy = element.__copy__()
+                        # Create a clean copy by parsing the string representation
+                        element_copy = BeautifulSoup(str(element), 'html.parser').contents[0]
                         wrapper.append(element_copy)
                     return wrapper
         

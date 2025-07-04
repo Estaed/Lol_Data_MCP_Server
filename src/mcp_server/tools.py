@@ -57,25 +57,7 @@ class MCPTool(ABC):
 
 
 # Input Models for Tool Validation
-
-
-class GetChampionDataInput(BaseModel):
-    """Input schema for get_champion_data tool"""
-
-    champion: str = Field(..., description="Champion name")
-    patch: str = Field("current", description="Game patch version")
-    include: List[str] = Field(
-        default=["stats", "abilities"], description="Data sections to include"
-    )
-
-    @field_validator("include")
-    @classmethod
-    def validate_include_options(cls, v: List[str]) -> List[str]:
-        valid_options = {"stats", "abilities", "builds", "history"}
-        invalid = set(v) - valid_options
-        if invalid:
-            raise ValueError(f"Invalid include options: {invalid}")
-        return v
+# GetChampionDataInput is now imported from champion_service to avoid circular imports
 
 
 class GetAbilityDetailsInput(BaseModel):
@@ -318,6 +300,77 @@ class GetChampionStatsAtLevelTool(MCPTool):
             return {"error": f"Failed to calculate champion stats: {str(e)}"}
 
 
+class PingTool(MCPTool):
+    """Basic ping tool for health checking"""
+    
+    def __init__(self) -> None:
+        super().__init__(
+            name="ping",
+            description="Test connectivity and server response",
+        )
+
+    def get_schema(self) -> MCPToolSchema:
+        return MCPToolSchema(
+            name=self.name,
+            description=self.description,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "default": "ping",
+                        "description": "Optional message to echo back",
+                    }
+                },
+            },
+        )
+
+    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute ping operation"""
+        message = params.get("message", "ping")
+        return {
+            "status": "pong",
+            "message": message,
+            "timestamp": "2024-12-01T10:00:00Z"
+        }
+
+
+class ServerInfoTool(MCPTool):
+    """Tool for getting server information and status"""
+    
+    def __init__(self) -> None:
+        super().__init__(
+            name="server_info",
+            description="Get server information and status",
+        )
+
+    def get_schema(self) -> MCPToolSchema:
+        return MCPToolSchema(
+            name=self.name,
+            description=self.description,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "random_string": {
+                        "type": "string",
+                        "description": "Dummy parameter for no-parameter tools",
+                    }
+                },
+                "required": ["random_string"],
+            },
+        )
+
+    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute server info retrieval"""
+        return {
+            "name": "lol-data-mcp-server",
+            "version": "1.0.0",
+            "status": "running",
+            "tools_count": 5,
+            "description": "MCP server for League of Legends champion data"
+        }
+
+
 class ToolRegistry:
     """Central registry for all MCP tools"""
 
@@ -327,14 +380,23 @@ class ToolRegistry:
 
     def _register_default_tools(self) -> None:
         """Register the default set of tools"""
-        # Create a single ChampionService instance for dependency injection
-        from src.services.champion_service import ChampionService
-        champion_service = ChampionService()
+        # Register basic tools first (no dependencies)
+        self.register_tool(PingTool())
+        self.register_tool(ServerInfoTool())
         
-        # Register all LoL tools with injected ChampionService
-        self.register_tool(GetChampionDataTool(champion_service))
-        self.register_tool(GetAbilityDetailsTool(champion_service))
-        self.register_tool(GetChampionStatsAtLevelTool(champion_service))
+        # Delay ChampionService import to avoid circular import
+        try:
+            from src.services.champion_service import ChampionService
+            champion_service = ChampionService()
+            
+            # Register all LoL tools with injected ChampionService
+            self.register_tool(GetChampionDataTool(champion_service))
+            self.register_tool(GetAbilityDetailsTool(champion_service))
+            self.register_tool(GetChampionStatsAtLevelTool(champion_service))
+        except ImportError as e:
+            # Log the error but continue with basic tools
+            print(f"Warning: Could not import ChampionService: {e}")
+            print("Only basic tools (ping, server_info) will be available")
 
     def register_tool(self, tool: MCPTool) -> None:
         """Register a new tool"""

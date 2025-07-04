@@ -40,18 +40,15 @@ class MCPHandler:
         """Initialize the MCP handler and load available tools."""
         logger.info("Initializing MCP handler")
 
-        # Register both basic tools and LoL data tools
-        self._register_basic_tools()
-        
+        # Tools are already registered in ToolRegistry during initialization
         self.initialized = True
-        total_tools = len(self.tool_registry.list_tools()) + len(self.basic_tools)
+        total_tools = len(self.tool_registry.list_tools())
         logger.info("MCP handler initialized", tools_count=total_tools)
 
     async def cleanup(self):
         """Clean up resources."""
         logger.info("Cleaning up MCP handler")
         self.clients.clear()
-        self.basic_tools.clear()
         self.initialized = False
 
     async def is_healthy(self) -> bool:
@@ -170,23 +167,13 @@ class MCPHandler:
 
         tools_list = []
         
-        # Add LoL data tools
+        # Add all tools from ToolRegistry (includes both basic and LoL data tools)
         for tool_schema in self.tool_registry.list_tools():
             tools_list.append({
                 "name": tool_schema.name,
                 "description": tool_schema.description,
                 "inputSchema": tool_schema.input_schema,
             })
-        
-        # Add basic tools
-        for tool_name, tool_info in self.basic_tools.items():
-            tools_list.append(
-                {
-                    "name": tool_name,
-                    "description": tool_info["description"],
-                    "inputSchema": tool_info["inputSchema"],
-                }
-            )
 
         return {"jsonrpc": "2.0", "id": message_id, "result": {"tools": tools_list}}
 
@@ -208,7 +195,7 @@ class MCPHandler:
 
         logger.info("Calling tool", tool_name=tool_name, arguments=arguments)
 
-        # Try LoL data tools first
+        # Use unified ToolRegistry for all tools
         tool = self.tool_registry.get_tool(tool_name)
         if tool:
             try:
@@ -219,23 +206,7 @@ class MCPHandler:
                     "result": {"content": [{"type": "text", "text": str(result)}]},
                 }
             except Exception as e:
-                logger.error("LoL tool execution failed", tool_name=tool_name, error=str(e))
-                return self._create_error_response(
-                    message_id, -32603, f"Tool execution failed: {str(e)}"
-                )
-
-        # Try basic tools
-        if tool_name in self.basic_tools:
-            try:
-                tool_handler = self.basic_tools[tool_name]["handler"]
-                result = await tool_handler(arguments)
-                return {
-                    "jsonrpc": "2.0",
-                    "id": message_id,
-                    "result": {"content": [{"type": "text", "text": str(result)}]},
-                }
-            except Exception as e:
-                logger.error("Basic tool execution failed", tool_name=tool_name, error=str(e))
+                logger.error("Tool execution failed", tool_name=tool_name, error=str(e))
                 return self._create_error_response(
                     message_id, -32603, f"Tool execution failed: {str(e)}"
                 )
@@ -264,67 +235,4 @@ class MCPHandler:
             "error": {"code": code, "message": message},
         }
 
-    def _register_basic_tools(self):
-        """Register basic tools for initial server functionality."""
-        
-        self.basic_tools = {}
 
-        # Basic ping tool for connectivity testing
-        self.basic_tools["ping"] = {
-            "description": "Test connectivity and server response",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "message": {
-                        "type": "string",
-                        "description": "Optional message to echo back",
-                        "default": "ping",
-                    }
-                },
-            },
-            "handler": self._handle_ping_tool,
-        }
-
-        # Server info tool
-        self.basic_tools["server_info"] = {
-            "description": "Get server information and status",
-            "inputSchema": {"type": "object", "properties": {}},
-            "handler": self._handle_server_info_tool,
-        }
-
-    async def _handle_ping_tool(self, arguments: Dict[str, Any]) -> str:
-        """
-        Handle ping tool execution.
-
-        Args:
-            arguments: Tool arguments
-
-        Returns:
-            Ping response
-        """
-        message = arguments.get("message", "ping")
-        return f"pong: {message}"
-
-    async def _handle_server_info_tool(
-        self, arguments: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Handle server info tool execution.
-
-        Args:
-            arguments: Tool arguments
-
-        Returns:
-            Server information
-        """
-        total_tools = len(self.tool_registry.list_tools()) + len(self.basic_tools)
-        return {
-            "server": self.server_info,
-            "stats": {
-                "tools_available": total_tools,
-                "lol_tools": len(self.tool_registry.list_tools()),
-                "basic_tools": len(self.basic_tools),
-                "clients_connected": len(self.clients),
-                "uptime": "available after full implementation",
-            },
-        }
