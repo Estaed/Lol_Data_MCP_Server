@@ -424,17 +424,24 @@ class ChampionService:
         stats = None
         abilities = None
         
-        # Fix: Handle both success and failure cases for stats
-        if 'error' not in wiki_stats and wiki_stats:  # Success case - stats is the dict itself
+        # Simplified error handling: Check for error key, then extract data appropriately
+        if 'error' not in wiki_stats and wiki_stats:
+            # Success case - stats is the dict itself
             stats = self._transform_wiki_stats(wiki_stats)
-        elif wiki_stats.get('stats'):  # Failure case - stats wrapped under 'stats' key
-            stats = self._transform_wiki_stats(wiki_stats['stats'])
+        elif wiki_stats.get('stats'):
+            # Failure case - empty stats dict wrapped under 'stats' key
+            # Only transform if there's actual data, not just an empty dict
+            if wiki_stats['stats']:
+                stats = self._transform_wiki_stats(wiki_stats['stats'])
             
-        # Fix: Handle both success and failure cases for abilities  
-        if 'error' not in wiki_abilities and wiki_abilities.get('abilities'):  # Success case
+        if 'error' not in wiki_abilities and wiki_abilities.get('abilities'):
+            # Success case - abilities dict is directly in the result
             abilities = self._transform_wiki_abilities(wiki_abilities['abilities'])
-        elif wiki_abilities.get('abilities'):  # Failure case - abilities wrapped
-            abilities = self._transform_wiki_abilities(wiki_abilities['abilities'])
+        elif wiki_abilities.get('abilities'):
+            # Failure case - empty abilities dict wrapped under 'abilities' key
+            # Only transform if there's actual data, not just an empty dict
+            if wiki_abilities['abilities']:
+                abilities = self._transform_wiki_abilities(wiki_abilities['abilities'])
         
         # Create ChampionData object
         champion_data = ChampionData(
@@ -716,14 +723,14 @@ class ChampionService:
                     response["stats"] = champion_data.stats.model_dump()
                 else:
                     response["stats"] = None
-                    response["stats_note"] = "Stats not available from data source"
+                    # Note: Removed debug notes for cleaner production API responses
             
             if "abilities" in validated_input.include:
                 if champion_data.abilities:
                     response["abilities"] = champion_data.abilities.model_dump()
                 else:
                     response["abilities"] = None
-                    response["abilities_note"] = "Abilities not available from data source"
+                    # Note: Removed debug notes for cleaner production API responses
             
             if "builds" in validated_input.include:
                 # Mock builds data for future implementation
