@@ -25,6 +25,7 @@ class GetChampionDataInput(BaseModel):
     include: List[str] = Field(
         default=["stats", "abilities"], description="Data sections to include"
     )
+    level: Optional[int] = Field(None, ge=1, le=18, description="Specific level for stats (1-18). If not provided, shows base stats with growth or ranges.")
 
     @field_validator("include")
     @classmethod
@@ -335,6 +336,125 @@ class ChampionService:
         
         return progression
     
+    async def get_champion_stats_at_level(self, champion_name: str, level: int) -> Dict[str, Any]:
+        """
+        Get champion stats for a specific level using Selenium scraping.
+        
+        This method bypasses formula calculations and gets exact stats from the wiki
+        for the specified level by interacting with the level dropdown.
+        
+        Args:
+            champion_name: Champion name
+            level: Level to get stats for (1-18)
+            
+        Returns:
+            Dictionary containing stats for the specified level
+            
+        Raises:
+            ValueError: If level is not between 1-18
+            ChampionNotFoundError: If champion not found
+            WikiScraperError: If scraping fails
+        """
+        if not 1 <= level <= 18:
+            raise ValueError(f"Level must be between 1 and 18, got: {level}")
+        
+        if not self.wiki_scraper:
+            raise WikiScraperError("WikiScraper not enabled - cannot scrape level-specific stats")
+        
+        normalized_name = self._normalize_champion_name(champion_name)
+        
+        self.logger.info(f"Getting level {level} stats for {normalized_name} using Selenium")
+        
+        try:
+            # Use Selenium to scrape level-specific stats
+            level_stats_data = await self.wiki_scraper.scrape_level_specific_stats(normalized_name, level)
+            
+            # Extract the stats from the Selenium response
+            raw_stats = level_stats_data.get('stats', {})
+            
+            if not raw_stats:
+                self.logger.warning(f"No stats found for {normalized_name} at level {level}")
+                return {
+                    'champion': normalized_name,
+                    'level': level,
+                    'stats': None,
+                    'error': 'No stats available',
+                    'data_source': 'selenium_no_data'
+                }
+            
+            # Transform Selenium stats to our format
+            transformed_stats = self._transform_selenium_stats(raw_stats, level)
+            
+            self.logger.info(f"Successfully retrieved level {level} stats for {normalized_name}")
+            
+            return {
+                'champion': normalized_name,
+                'level': level,
+                'stats': transformed_stats,
+                'scraped_at': level_stats_data.get('scraped_at'),
+                'data_source': 'selenium',
+                'scraping_method': level_stats_data.get('scraping_method')
+            }
+            
+        except WikiScraperError as e:
+            self.logger.error(f"Failed to scrape level {level} stats for {normalized_name}: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(f"Unexpected error getting level {level} stats for {normalized_name}: {e}")
+            raise WikiScraperError(f"Failed to get level-specific stats: {e}")
+    
+    def _transform_selenium_stats(self, raw_stats: Dict[str, Any], level: int) -> Dict[str, Any]:
+        """
+        Transform Selenium-scraped stats to our standard format
+        
+        Args:
+            raw_stats: Raw stats from Selenium scraping
+            level: The level these stats are for
+            
+        Returns:
+            Dictionary with transformed stats
+        """
+        # Map Selenium stat names to our field names
+        stat_mapping = {
+            'hp': 'health',
+            'mana': 'mana', 
+            'hp_regen': 'health_regen',
+            'mana_regen': 'mana_regen',
+            'armor': 'armor',
+            'attack_damage': 'attack_damage',
+            'magic_resist': 'magic_resist',
+            'movement_speed': 'movement_speed',
+            'attack_range': 'attack_range',
+            'bonus_attack_speed': 'bonus_attack_speed',
+            'crit_damage': 'critical_damage',
+            'base_attack_speed': 'base_attack_speed',
+            'windup_percent': 'windup_percent',
+            'attack_speed_ratio': 'attack_speed_ratio'
+        }
+        
+        transformed_stats = {}
+        
+        for selenium_key, our_key in stat_mapping.items():
+            if selenium_key in raw_stats and raw_stats[selenium_key] is not None:
+                value = raw_stats[selenium_key]
+                
+                # Only include numeric values
+                if isinstance(value, (int, float)):
+                    transformed_stats[our_key] = value
+                elif isinstance(value, str):
+                    # Try to parse string values to numbers
+                    try:
+                        transformed_stats[our_key] = float(value)
+                    except (ValueError, TypeError):
+                        self.logger.debug(f"Could not parse {our_key} value: {value}")
+        
+        # Add level information
+        transformed_stats['level'] = level
+        transformed_stats['is_level_specific'] = True
+        
+        self.logger.debug(f"Transformed {len(transformed_stats)} selenium stats for level {level}")
+        return transformed_stats
+    
     def _transform_wiki_abilities(self, wiki_abilities: Dict[str, Any]) -> Optional[ChampionAbilities]:
         """
         Transform WikiScraper abilities format to ChampionAbilities model
@@ -634,7 +754,8 @@ class ChampionService:
         self, 
         champion: str, 
         patch: str = "current", 
-        include: Optional[list[str]] = None
+        include: Optional[list[str]] = None,
+        level: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Retrieve comprehensive champion data with WikiScraper integration and fallback
@@ -643,6 +764,7 @@ class ChampionService:
             champion: Champion name to retrieve data for
             patch: Game patch version (default: "current")
             include: List of data sections to include (stats, abilities, builds, history)
+            level: Specific level for stats (1-18). If provided, uses Selenium to get exact stats for that level.
             
         Returns:
             Dictionary containing champion data based on include parameters
@@ -657,6 +779,7 @@ class ChampionService:
             champion=champion,
             patch=patch,
             include=include,
+            level=level,
             wiki_enabled=self.enable_wiki
         )
         
@@ -665,7 +788,8 @@ class ChampionService:
             validated_input = GetChampionDataInput(
                 champion=champion,
                 patch=patch,
-                include=include
+                include=include,
+                level=level
             )
             
             # Try to get data from WikiScraper first, then fallback to mock
@@ -719,11 +843,42 @@ class ChampionService:
             
             # Add requested data sections
             if "stats" in validated_input.include:
-                if champion_data.stats:
-                    response["stats"] = champion_data.stats.model_dump()
+                # Handle level-specific stats with Selenium if level is provided
+                if validated_input.level is not None:
+                    # Use Selenium to get exact stats for the specified level
+                    if self.enable_wiki and self.wiki_scraper:
+                        try:
+                            level_stats_data = await self.get_champion_stats_at_level(champion, validated_input.level)
+                            response["stats"] = level_stats_data["stats"]
+                            response["level"] = validated_input.level
+                            response["stats_type"] = "level_specific"
+                            response["stats_source"] = level_stats_data.get("data_source", "selenium")
+                            self.logger.info(f"Retrieved level {validated_input.level} stats for {champion}")
+                        except Exception as e:
+                            self.logger.warning(f"Failed to get level {validated_input.level} stats for {champion}: {e}")
+                            # Fallback to regular stats with note about failure
+                            if champion_data.stats:
+                                response["stats"] = champion_data.stats.model_dump()
+                                response["stats_type"] = "base_with_growth"
+                                response["level_request_failed"] = True
+                                response["level_error"] = str(e)
+                            else:
+                                response["stats"] = None
+                    else:
+                        # WikiScraper not available, use regular stats
+                        if champion_data.stats:
+                            response["stats"] = champion_data.stats.model_dump()
+                            response["stats_type"] = "base_with_growth"
+                            response["level_not_available"] = "Selenium scraping not enabled"
+                        else:
+                            response["stats"] = None
                 else:
-                    response["stats"] = None
-                    # Note: Removed debug notes for cleaner production API responses
+                    # No level specified, use regular stats
+                    if champion_data.stats:
+                        response["stats"] = champion_data.stats.model_dump()
+                        response["stats_type"] = "base_with_growth"
+                    else:
+                        response["stats"] = None
             
             if "abilities" in validated_input.include:
                 if champion_data.abilities:

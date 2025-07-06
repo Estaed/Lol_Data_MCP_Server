@@ -21,6 +21,35 @@ from urllib.parse import urljoin, quote
 import httpx
 from bs4 import BeautifulSoup, Tag
 
+# Selenium imports for level-specific stat scraping
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait, Select
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+
+
+# CSS selectors configuration from wiki_selectors.md for Task 2.1.8
+LEVEL_SELECTORS = {
+    'level_dropdown': '#lvl_',
+    'hp': '#Health__lvl',
+    'mana': '#ResourceBar__lvl',
+    'hp_regen': '#HealthRegen__lvl',
+    'mana_regen': '#ResourceRegen__lvl',
+    'armor': '#Armor__lvl',
+    'attack_damage': '#AttackDamage__lvl',
+    'magic_resist': '#MagicResist__lvl',
+    'movement_speed': '#MovementSpeed_',
+    'attack_range': '#AttackRange_',
+    'bonus_attack_speed': '#AttackSpeedBonus__lvl',
+    # Complex selectors for stats without simple IDs
+    'crit_damage': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(2) > div:nth-child(8) > div.infobox-data-value.statsbox',
+    'base_attack_speed': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(4) > div:nth-child(1) > div.infobox-data-value.statsbox',
+    'windup_percent': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(4) > div:nth-child(2) > div.infobox-data-value.statsbox',
+    'attack_speed_ratio': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(4) > div:nth-child(3) > div.infobox-data-value.statsbox'
+}
+
 
 class WikiScraperError(Exception):
     """Base exception for wiki scraper errors"""
@@ -1573,3 +1602,248 @@ class WikiScraper:
         
         self.logger.debug(f"Normalized champion name: {name} -> {normalized}")
         return normalized 
+
+    # ==================== SELENIUM METHODS FOR TASK 2.1.8 ====================
+    
+    def _create_selenium_driver(self) -> webdriver.Chrome:
+        """
+        Create a headless Chrome WebDriver for interacting with LoL Wiki
+        
+        Returns:
+            Chrome WebDriver instance configured for scraping
+        """
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")  # Run in background
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--user-agent=LoL-Data-MCP-Server/1.0 (Educational Research; contact@example.com)")
+        
+        # Disable images and CSS for faster loading
+        prefs = {
+            "profile.managed_default_content_settings.images": 2,
+            "profile.default_content_setting_values.notifications": 2
+        }
+        chrome_options.add_experimental_option("prefs", prefs)
+        
+        try:
+            driver = webdriver.Chrome(options=chrome_options)
+            driver.set_page_load_timeout(30)
+            self.logger.info("Created Chrome WebDriver for Selenium scraping")
+            return driver
+        except Exception as e:
+            self.logger.error(f"Failed to create Chrome WebDriver: {e}")
+            raise WikiScraperError(f"Failed to initialize Selenium WebDriver: {e}")
+    
+    async def scrape_level_specific_stats(self, champion_name: str, level: int) -> Dict[str, Any]:
+        """
+        Scrape champion stats for a specific level using Selenium to interact with level dropdown
+        
+        Args:
+            champion_name: Name of the champion
+            level: Level to scrape stats for (1-18)
+            
+        Returns:
+            Dictionary containing stats for the specified level
+        """
+        if not 1 <= level <= 18:
+            raise ValueError(f"Level must be between 1 and 18, got: {level}")
+        
+        self.logger.info(f"Scraping level {level} stats for {champion_name} using Selenium")
+        
+        # Normalize champion name
+        normalized_name = self.normalize_champion_name(champion_name)
+        champion_url = self._build_champion_url(normalized_name)
+        
+        driver = None
+        try:
+            # Create Selenium driver
+            driver = self._create_selenium_driver()
+            
+            # Navigate to champion page
+            self.logger.debug(f"Navigating to {champion_url}")
+            driver.get(champion_url)
+            
+            # Wait for page to load and find level dropdown
+            wait = WebDriverWait(driver, 10)
+            level_dropdown = wait.until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, LEVEL_SELECTORS['level_dropdown']))
+            )
+            
+            # Select the desired level
+            select = Select(level_dropdown)
+            select.select_by_value(str(level))
+            self.logger.debug(f"Selected level {level} from dropdown")
+            
+            # Wait for JavaScript to update stat values (give it time to recalculate)
+            await asyncio.sleep(2)
+            
+            # Extract all stats for this level
+            level_stats = {}
+            for stat_name, selector in LEVEL_SELECTORS.items():
+                if stat_name == 'level_dropdown':  # Skip the dropdown itself
+                    continue
+                    
+                try:
+                    element = driver.find_element(By.CSS_SELECTOR, selector)
+                    stat_value = element.text.strip()
+                    
+                    # Parse numerical value from text
+                    parsed_value = self._parse_stat_text(stat_value)
+                    if parsed_value is not None:
+                        level_stats[stat_name] = parsed_value
+                        self.logger.debug(f"Level {level} {stat_name}: {parsed_value}")
+                    else:
+                        self.logger.warning(f"Could not parse {stat_name} value: {stat_value}")
+                        level_stats[stat_name] = stat_value  # Store original text if parsing fails
+                        
+                except NoSuchElementException:
+                    self.logger.warning(f"Could not find element for {stat_name} using selector: {selector}")
+                    level_stats[stat_name] = None
+                except Exception as e:
+                    self.logger.warning(f"Error extracting {stat_name}: {e}")
+                    level_stats[stat_name] = None
+            
+            self.logger.info(f"Successfully scraped {len(level_stats)} stats for {champion_name} level {level}")
+            
+            return {
+                'champion': normalized_name,
+                'level': level,
+                'stats': level_stats,
+                'scraped_at': datetime.now().isoformat(),
+                'scraping_method': 'selenium'
+            }
+            
+        except TimeoutException:
+            self.logger.error(f"Timeout waiting for level dropdown on {champion_name} page")
+            raise WikiScraperError(f"Timeout waiting for page elements to load for {champion_name}")
+        except WebDriverException as e:
+            self.logger.error(f"WebDriver error while scraping {champion_name}: {e}")
+            raise WikiScraperError(f"Browser automation error: {e}")
+        except Exception as e:
+            self.logger.error(f"Unexpected error scraping level {level} stats for {champion_name}: {e}")
+            raise WikiScraperError(f"Failed to scrape level-specific stats: {e}")
+        finally:
+            if driver:
+                driver.quit()
+                self.logger.debug("Closed Selenium WebDriver")
+    
+    async def scrape_all_level_stats(self, champion_name: str) -> Dict[str, Any]:
+        """
+        Scrape champion stats for all levels (1-18) using Selenium
+        
+        Args:
+            champion_name: Name of the champion
+            
+        Returns:
+            Dictionary containing stats for all 18 levels
+        """
+        self.logger.info(f"Scraping all level stats (1-18) for {champion_name}")
+        
+        # Normalize champion name
+        normalized_name = self.normalize_champion_name(champion_name)
+        champion_url = self._build_champion_url(normalized_name)
+        
+        driver = None
+        all_level_stats = {}
+        
+        try:
+            # Create Selenium driver
+            driver = self._create_selenium_driver()
+            
+            # Navigate to champion page once
+            self.logger.debug(f"Navigating to {champion_url}")
+            driver.get(champion_url)
+            
+            # Wait for page to load and find level dropdown
+            wait = WebDriverWait(driver, 10)
+            level_dropdown = wait.until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, LEVEL_SELECTORS['level_dropdown']))
+            )
+            select = Select(level_dropdown)
+            
+            # Loop through all levels
+            for level in range(1, 19):  # Levels 1-18
+                try:
+                    self.logger.debug(f"Scraping level {level} stats")
+                    
+                    # Select level
+                    select.select_by_value(str(level))
+                    
+                    # Wait for JavaScript to update values
+                    await asyncio.sleep(1.5)  # Shorter delay since we're in same page
+                    
+                    # Extract stats for this level
+                    level_stats = {}
+                    for stat_name, selector in LEVEL_SELECTORS.items():
+                        if stat_name == 'level_dropdown':
+                            continue
+                            
+                        try:
+                            element = driver.find_element(By.CSS_SELECTOR, selector)
+                            stat_value = element.text.strip()
+                            parsed_value = self._parse_stat_text(stat_value)
+                            
+                            level_stats[stat_name] = parsed_value if parsed_value is not None else stat_value
+                            
+                        except NoSuchElementException:
+                            level_stats[stat_name] = None
+                        except Exception as e:
+                            self.logger.warning(f"Error extracting {stat_name} at level {level}: {e}")
+                            level_stats[stat_name] = None
+                    
+                    all_level_stats[f"level_{level}"] = level_stats
+                    self.logger.debug(f"Completed level {level}")
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to scrape level {level}: {e}")
+                    all_level_stats[f"level_{level}"] = {"error": str(e)}
+            
+            self.logger.info(f"Successfully scraped stats for all 18 levels of {champion_name}")
+            
+            return {
+                'champion': normalized_name,
+                'total_levels': 18,
+                'stats_by_level': all_level_stats,
+                'scraped_at': datetime.now().isoformat(),
+                'scraping_method': 'selenium_bulk'
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Failed to scrape all level stats for {champion_name}: {e}")
+            raise WikiScraperError(f"Failed to scrape all level stats: {e}")
+        finally:
+            if driver:
+                driver.quit()
+                self.logger.debug("Closed Selenium WebDriver")
+    
+    def _parse_stat_text(self, text: str) -> Optional[float]:
+        """
+        Parse numerical value from stat text
+        
+        Args:
+            text: Raw text from wiki element
+            
+        Returns:
+            Parsed numerical value or None if parsing fails
+        """
+        if not text:
+            return None
+        
+        # Remove common non-numeric characters and extract number
+        cleaned = re.sub(r'[^\d.-]', '', text.strip())
+        
+        try:
+            return float(cleaned) if cleaned else None
+        except ValueError:
+            # Try to extract first number if multiple numbers exist
+            numbers = re.findall(r'\d+\.?\d*', text)
+            if numbers:
+                try:
+                    return float(numbers[0])
+                except ValueError:
+                    pass
+            return None
+    
+    # ==================== END SELENIUM METHODS ====================

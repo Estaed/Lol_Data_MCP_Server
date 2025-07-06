@@ -141,34 +141,41 @@ python -m src.mcp_server.stdio_server
 # @mcp lol-data ping {"message": "Hello from Taric AI project!"}
 ```
 
+### 🔧 Requirements for Level-Specific Stats
+- **Chrome Browser**: Required for Selenium WebDriver automation
+- **Internet Connection**: Active connection needed for wiki scraping
+- **Performance**: Level-specific requests take ~8-10 seconds due to browser automation
+
 ## 🎮 Working Examples
 
-### Get Champion Data
+### Get Champion Data  
 ```python
-# In Cursor chat or code - ANY CHAMPION WORKS NOW!
-@mcp lol-data get_champion_data {"champion": "Samira"}
-# Returns: Real wiki data for Samira with fallback to mock if needed
+# Basic champion data - returns base stats and abilities
+@mcp lol-data get_champion_data {"champion": "Taric"}
+# Returns: Base stats (HP: 645.0) and abilities from wiki
 
 @mcp lol-data get_champion_data {"champion": "Akali"}
 # Returns: Real Akali data from LoL Wiki
 
-@mcp lol-data get_champion_data {"champion": "Taric"}
-# Returns: Either real wiki data OR reliable mock data (fallback)
+@mcp lol-data get_champion_data {"champion": "Samira"}
+# Returns: Real wiki data for Samira with fallback to mock if needed
 ```
 
-### 🆕 Level-Specific Stat Calculations
+### 🚀 NEW: Level-Specific Stats with Selenium
 ```python
-# Calculate Soraka's stats at level 18 (with corrected linear formula)
-@mcp lol-data get_champion_stats_at_level {"champion": "Soraka", "level": 18}
-# Returns: HP: 2,101 using 605 + 88×(18-1) linear formula
+# Get exact stats for any level using Selenium wiki scraping  
+@mcp lol-data get_champion_data {"champion": "Taric", "level": 13}
+# Returns: HP: 1729.05 (exact wiki value for level 13)
 
-# Get progression for all levels 1-18
-@mcp lol-data get_champion_stats_at_level {"champion": "Soraka", "level": 10, "include_progression": true}
-# Returns: Level 10 stats + complete progression table
+@mcp lol-data get_champion_data {"champion": "Ezreal", "level": 6}  
+# Returns: Exact level 6 stats scraped from wiki
 
-# Calculate any champion at any level
-@mcp lol-data get_champion_stats_at_level {"champion": "Jinx", "level": 6}
-# Returns: Jinx's stats precisely calculated for level 6
+@mcp lol-data get_champion_data {"champion": "Jinx", "level": 18}
+# Returns: Maximum level stats with precision
+
+# Combined data - stats for specific level + abilities  
+@mcp lol-data get_champion_data {"champion": "Taric", "level": 10, "include": ["stats", "abilities"]}
+# Returns: Level 10 stats + all abilities information
 ```
 
 ### Test Connectivity
@@ -180,7 +187,7 @@ python -m src.mcp_server.stdio_server
 ### Server Status
 ```python
 @mcp lol-data server_info
-# Returns: Server stats showing 8 tools available
+# Returns: Server stats showing 4 tools available
 ```
 
 ## 🚧 Next Development Phase: Data Expansion
@@ -243,10 +250,11 @@ This MCP server is designed to integrate with other LoL development projects:
 ## 📊 Current Achievements
 
 - **✅ MCP Integration**: Successfully integrated with Cursor IDE
-- **✅ Tool Availability**: 7 tools operational (5 LoL + 2 basic)
+- **✅ Tool Availability**: 4 tools operational (2 LoL + 2 basic)
+- **✅ Level-Specific Stats**: Selenium-powered accurate level stats (Task 2.1.8 ✅)  
 - **✅ Data Quality**: 100% accuracy for implemented champions (Taric, Ezreal)
-- **✅ Response Time**: <50ms for mock data responses
-- **✅ Reliability**: 100% uptime during development testing
+- **✅ Response Time**: <50ms for base data, ~8-10s for Selenium level stats
+- **✅ Selenium Integration**: Chrome WebDriver automation for wiki interaction
 
 ## 🎯 Development Workflow
 
@@ -293,12 +301,30 @@ This MCP server is designed to integrate with other LoL development projects:
 - **Real Descriptions**: ✅ Actual wiki content extracted with proper length variations
 - **Stats Extraction**: ✅ Cooldowns, mana costs, and ranges parsed correctly
 
-**🎯 Next Task:** Task 2.1.5 - Error Handling and Caching Implementation (Already completed)
+**🎉 COMPLETED:** Task 2.1.8 - Per-Level Stat Scraping with Selenium  
+**Achievement:** **SELENIUM INTEGRATION COMPLETE** - Level-specific stats now scraped directly from wiki using browser automation  
+**Result:** Accurate level stats using real wiki values instead of potentially incorrect formulas
+
+**🚨 BREAKTHROUGH:** Selenium-Powered Wiki Automation
+- **Problem Solved**: Formula-based calculations were inaccurate (Taric L13: 1655 vs actual 1730)
+- **Solution Implemented**: Selenium WebDriver interacts with wiki level dropdown and extracts exact values
+- **Accuracy Achieved**: 99.9% accuracy (1729.05 vs expected 1730 - minimal rounding difference)
+- **Integration Complete**: Consolidated into get_champion_data tool with optional level parameter
+
+**✅ Successfully Implemented Level-Specific Stats:**
+- **Selenium Infrastructure**: Chrome WebDriver automation with CSS selectors from wiki_selectors.md
+- **Level Dropdown Interaction**: Programmatically selects any level 1-18 on wiki
+- **Real-Time Extraction**: Waits for JavaScript updates and extracts current stat values
+- **Tool Integration**: Added level parameter to get_champion_data MCP tool
+- **Fallback Strategy**: Graceful fallback to base stats if Selenium fails
+- **Tool Consolidation**: Removed redundant get_champion_stats_at_level tool
+
+**🎯 Next Task:** Task 2.1.9 - Enhanced Error Handling and Performance Optimization
 
 **📊 Current MCP Server Status:**
-- ✅ **Infrastructure**: 7 MCP tools registered and accessible via Cursor
+- ✅ **Infrastructure**: 4 MCP tools registered and accessible via Cursor
 - ✅ **Working Tools**: Real champion stats AND abilities extraction from live wiki pages
-- ✅ **Level-Based Stats**: Supports any level 1-18 calculations for user requirements  
+- ✅ **Level-Specific Stats**: Selenium-powered exact stat values for any level 1-18
 - ✅ **All Abilities**: Complete abilities parsing with real wiki data for any champion
 - ✅ **CSS-Based Parsing**: Robust implementation following best practices
-- ✅ **Integration Complete**: WikiScraper fully integrated with MCP server
+- ✅ **Selenium Integration**: Browser automation for interactive wiki scraping

@@ -71,12 +71,7 @@ class GetAbilityDetailsInput(BaseModel):
     include_scaling: bool = Field(True, description="Include scaling information")
 
 
-class GetChampionStatsAtLevelInput(BaseModel):
-    """Input schema for get_champion_stats_at_level tool"""
-    
-    champion: str = Field(..., description="Champion name")
-    level: int = Field(..., ge=1, le=18, description="Champion level (1-18)")
-    include_progression: bool = Field(False, description="Include stats for all levels 1-18")
+# GetChampionStatsAtLevelInput removed - functionality consolidated into GetChampionDataInput
 
 
 # Tool Implementations
@@ -88,7 +83,7 @@ class GetChampionDataTool(MCPTool):
     def __init__(self, champion_service=None) -> None:
         super().__init__(
             name="get_champion_data",
-            description="Get comprehensive champion information including stats, abilities, and builds",
+            description="Get comprehensive champion information including stats, abilities, and builds. Supports level-specific stats when level parameter is provided.",
         )
         # Champion service injected via dependency injection
         self._champion_service = champion_service
@@ -115,6 +110,12 @@ class GetChampionDataTool(MCPTool):
                         "default": ["stats", "abilities"],
                         "description": "Data sections to include",
                     },
+                    "level": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 18,
+                        "description": "Specific level for stats (1-18). If not provided, shows base stats with growth or ranges.",
+                    },
                 },
                 "required": ["champion"],
             },
@@ -129,7 +130,8 @@ class GetChampionDataTool(MCPTool):
         result = await self._champion_service.get_champion_data(
             champion=params.get("champion", ""),
             patch=params.get("patch", "current"),
-            include=params.get("include", ["stats", "abilities"])
+            include=params.get("include", ["stats", "abilities"]),
+            level=params.get("level")  # Pass level parameter
         )
         
         # Transform the service response to match the expected API
@@ -221,83 +223,7 @@ class GetAbilityDetailsTool(MCPTool):
             }
 
 
-class GetChampionStatsAtLevelTool(MCPTool):
-    """Tool for calculating champion stats at a specific level using stat formulas"""
-    
-    def __init__(self, champion_service=None) -> None:
-        super().__init__(
-            name="get_champion_stats_at_level",
-            description="Calculate champion stats at a specific level using stat formulas",
-        )
-        # Champion service injected via dependency injection
-        self._champion_service = champion_service
-
-    def get_schema(self) -> MCPToolSchema:
-        return MCPToolSchema(
-            name=self.name,
-            description=self.description,
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "champion": {"type": "string", "description": "Champion name"},
-                    "level": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 18,
-                        "description": "Champion level (1-18)"
-                    },
-                    "include_progression": {
-                        "type": "boolean",
-                        "default": False,
-                        "description": "Include stats for all levels 1-18"
-                    }
-                },
-                "required": ["champion", "level"],
-            },
-        )
-
-    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute level-specific stat calculation"""
-        try:
-            # Use the injected champion service
-            if not self._champion_service:
-                raise RuntimeError("ChampionService not properly injected")
-            
-            champion_name = params.get("champion", "")
-            level = params.get("level", 1)
-            include_progression = params.get("include_progression", False)
-            
-            # First get the champion data to populate formulas
-            champion_data = await self._champion_service.get_champion_data(
-                champion=champion_name,
-                include=["stats"]
-            )
-            
-            if not champion_data or "stats" not in champion_data:
-                return {"error": f"Could not retrieve stats for champion '{champion_name}'"}
-            
-            # Calculate stats at the specified level
-            level_stats = self._champion_service.calculate_stats_at_level(level)
-            
-            result = {
-                "champion": champion_name,
-                "level": level,
-                "stats": level_stats.dict() if level_stats else None
-            }
-            
-            # Include progression if requested
-            if include_progression:
-                progression = self._champion_service.get_stat_progression(1, 18)
-                result["progression"] = {
-                    str(lvl): stats.dict() for lvl, stats in progression.items()
-                }
-            
-            return result
-            
-        except ValueError as e:
-            return {"error": f"Invalid level: {str(e)}"}
-        except Exception as e:
-            return {"error": f"Failed to calculate champion stats: {str(e)}"}
+# GetChampionStatsAtLevelTool removed - functionality consolidated into GetChampionDataTool
 
 
 class PingTool(MCPTool):
@@ -366,7 +292,7 @@ class ServerInfoTool(MCPTool):
             "name": "lol-data-mcp-server",
             "version": "1.0.0",
             "status": "running",
-            "tools_count": 5,
+            "tools_count": 4,
             "description": "MCP server for League of Legends champion data"
         }
 
@@ -392,7 +318,7 @@ class ToolRegistry:
             # Register all LoL tools with injected ChampionService
             self.register_tool(GetChampionDataTool(champion_service))
             self.register_tool(GetAbilityDetailsTool(champion_service))
-            self.register_tool(GetChampionStatsAtLevelTool(champion_service))
+            # GetChampionStatsAtLevelTool removed - functionality consolidated into GetChampionDataTool
         except ImportError as e:
             # Log the error but continue with basic tools
             print(f"Warning: Could not import ChampionService: {e}")
