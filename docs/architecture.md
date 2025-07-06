@@ -13,10 +13,10 @@
 **Project Goal**: A comprehensive Model Context Protocol (MCP) server providing real-time, structured access to League of Legends game data for development environments, AI agents, and reinforcement learning applications.
 
 **Integration Status**: 
-- ✅ **7 Tools Available**: 5 LoL data tools + 2 basic tools
+- ✅ **7 Tools Available**: 3 LoL data tools + 2 basic tools + 2 placeholders
 - ✅ **Cursor IDE Integration**: PowerShell-based configuration handling Turkish character paths
-- ✅ **Full Functionality**: All core tools working (get_champion_data, search_champions, ping, server_info)
-- ✅ **Complete Data**: Taric and Ezreal champion data with stats and abilities
+- ✅ **Full Functionality**: All core tools working (get_champion_stats, ping, server_info)
+- ✅ **Live Data**: Scrapes live data from LoL Wiki for any champion.
 - ✅ **Stdio Architecture**: Proper MCP server implementation for IDE integration
 
 ---
@@ -30,16 +30,19 @@ Project Taric/Lol_Data_MCP_Server/
 │   │   ├── __init__.py
 │   │   ├── stdio_server.py          # ✅ NEW: Stdio MCP server for Cursor
 │   │   ├── server.py                # FastAPI web server (if needed)
-│   │   ├── mcp_handler.py           # ✅ UPDATED: Handles 7 tools
-│   │   └── tools.py                 # ✅ All 5 LoL data tools implemented
+│   │   ├── mcp_handler.py           # ✅ UPDATED: Handles all tools
+│   │   └── tools.py                 # ✅ All LoL data tools implemented
 │   ├── services/
-│   │   └── champion_service.py      # ✅ Mock data for Taric and Ezreal
+│   │   └── stats_service.py         # ✅ NEW: Handles champion stats logic
 │   ├── core/
 │   │   ├── __init__.py
 │   │   └── config.py                # Configuration management
-│   ├── data_processing/
-│   │   └── __init__.py
 │   ├── data_sources/
+│   │   └── scrapers/
+│   │       ├── __init__.py
+│   │       ├── base_scraper.py      # ✅ NEW: Base class for scrapers
+│   │       └── stats_scraper.py     # ✅ NEW: Scraper for champion stats
+│   ├── data_processing/
 │   │   └── __init__.py
 │   ├── query_engine/
 │   │   └── __init__.py
@@ -58,11 +61,8 @@ Project Taric/Lol_Data_MCP_Server/
 │   └── lol_data_mcp_server.md      # Detailed technical documentation with task history
 ├── tests/                          # Test suite
 │   ├── __init__.py
-│   ├── test_champion_service.py
-│   ├── test_config.py
 │   ├── test_mcp_server.py
-│   ├── test_package_structure.py
-│   └── test_tools.py
+│   └── test_wiki_scraper.py
 ├── examples/                       # Usage examples
 │   ├── client_examples/
 │   │   └── basic_usage.py
@@ -85,30 +85,25 @@ Project Taric/Lol_Data_MCP_Server/
 
 ### ✅ **Implemented Tools**
 
-#### 1. **get_champion_data** ✅
-**Description**: Get comprehensive champion information including stats, abilities, and builds
+#### 1. **get_champion_stats** ✅
+**Description**: Get comprehensive champion stats for a specific level.
 
 ```json
 {
-  "name": "get_champion_data",
-  "description": "Get comprehensive champion information including stats, abilities, and builds",
+  "name": "get_champion_stats",
+  "description": "Get comprehensive champion stats for a specific level.",
   "inputSchema": {
     "type": "object",
     "properties": {
-      "champion": {"type": "string", "description": "Champion name"},
-      "patch": {"type": "string", "default": "current"},
-      "include": {
-        "type": "array",
-        "items": {"enum": ["stats", "abilities", "builds", "history"]},
-        "default": ["stats", "abilities"]
-      }
+      "champion_name": {"type": "string", "description": "Champion name"},
+      "level": {"type": "integer", "default": 1, "minimum": 1, "maximum": 18}
     },
-    "required": ["champion"]
+    "required": ["champion_name"]
   }
 }
 ```
 
-**✅ Implementation Status**: Complete for Taric and Ezreal with full stats and abilities
+**✅ Implementation Status**: Complete. Scrapes live data from the wiki.
 
 #### 2. **get_ability_details** ⚠️
 **Description**: Get detailed ability information including damage, cooldowns, and scaling
@@ -130,7 +125,7 @@ Project Taric/Lol_Data_MCP_Server/
 }
 ```
 
-**⚠️ Implementation Status**: Placeholder implementation
+**⚠️ Implementation Status**: Placeholder implementation. Logic needs to be built.
 
 #### 3. **get_item_data** ⚠️
 **Description**: Get item information including stats, components, and cost efficiency
@@ -154,9 +149,9 @@ Project Taric/Lol_Data_MCP_Server/
 }
 ```
 
-**⚠️ Implementation Status**: Placeholder implementation
+**⚠️ Implementation Status**: Placeholder implementation. Logic needs to be built.
 
-#### 4. **search_champions** ✅
+#### 4. **search_champions** ⚠️
 **Description**: Search champions by name, role, tags, or other criteria
 
 ```json
@@ -175,7 +170,7 @@ Project Taric/Lol_Data_MCP_Server/
 }
 ```
 
-**✅ Implementation Status**: Basic structure implemented, search logic pending
+**⚠️ Implementation Status**: Placeholder implementation. Logic needs to be built.
 
 #### 5. **get_meta_builds** ⚠️
 **Description**: Get current meta builds, skill orders, and win rate statistics
@@ -197,7 +192,7 @@ Project Taric/Lol_Data_MCP_Server/
 }
 ```
 
-**⚠️ Implementation Status**: Placeholder implementation
+**⚠️ Implementation Status**: Placeholder implementation. Logic needs to be built.
 
 #### 6. **ping** ✅
 **Description**: Test connectivity and server response
@@ -237,29 +232,47 @@ Project Taric/Lol_Data_MCP_Server/
 
 ## 📊 **Available Champion Data**
 
-### ✅ **Complete Champion Data**
+The server no longer uses static, pre-defined champion data. Instead, it scrapes the official League of Legends Wiki in real-time to provide the most current and accurate data for **any champion requested**.
 
-#### **Taric - The Shield of Valoran**
-**Stats**: 575 health, 300 mana, 55 AD, 340 movement speed, 150 range
-**Abilities**:
-- **Passive - Bravado**: Spell casts empower next 2 basic attacks
-- **Q - Starlight's Touch**: Heal all nearby allied champions
-- **W - Bastion**: Shield an ally and gain damage reduction
-- **E - Dazzle**: Stun enemies in a line after a delay
-- **R - Cosmic Radiance**: Grant team-wide invulnerability after a delay
+This ensures that the data reflects the latest patches and balance changes without needing manual updates to the server's source code.
 
-**Roles**: Support, Top | **Difficulty**: 5 | **Tags**: Support, Fighter, Tank
+---
 
-#### **Ezreal - The Prodigal Explorer**
-**Stats**: 530 health, 375 mana, 62 AD, 325 movement speed, 550 range
-**Abilities**:
-- **Passive - Rising Spell Force**: Gain attack speed when hitting abilities
-- **Q - Mystic Shot**: Skillshot that reduces cooldowns on hit
-- **W - Essence Flux**: Mark enemies for bonus damage
-- **E - Arcane Shift**: Blink and fire a homing bolt
-- **R - Trueshot Barrage**: Global damaging skillshot
+## 🏛️ **Architectural Overview**
 
-**Roles**: ADC, Mid | **Difficulty**: 7 | **Tags**: Marksman, Mage
+The server follows a modular, service-oriented architecture designed for scalability and maintainability.
+
+### **Core Components**
+
+1.  **`mcp_server/` - MCP Protocol Layer**
+    -   **`stdio_server.py`**: The main entry point for the MCP server. It listens for requests over stdio, making it compatible with environments like Cursor.
+    -   **`mcp_handler.py`**: Deserializes incoming JSON-RPC requests, routes them to the correct tool, executes the tool, and serializes the response.
+    -   **`tools.py`**: Defines the MCP tools available to the client. It uses a `ToolRegistry` to dynamically discover and register tools from other modules.
+
+2.  **`services/` - Business Logic Layer**
+    -   **`stats_service.py`**: Implements the core logic for the `get_champion_stats` tool. It orchestrates calls to the data layer (`scrapers`) to fetch the required information.
+
+3.  **`data_sources/` - Data Acquisition Layer**
+    -   **`scrapers/`**: Contains modules responsible for fetching raw data from external sources.
+        -   **`base_scraper.py`**: Provides a base class with shared functionality like caching (`CacheManager`) and champion name normalization.
+        -   **`stats_scraper.py`**: Contains the `StatsScraper` class, which is responsible for scraping champion statistics from the LoL Wiki.
+
+4.  **`core/` - Core Utilities**
+    -   **`config.py`**: Manages loading and accessing configuration from YAML files. It supports different environments (e.g., development, production).
+
+5.  **`config/` - Configuration Files**
+    -   Contains all YAML configuration files for the server, data sources, and tools. This separation of configuration from code allows for easy modification without touching the application logic.
+
+### **Data Flow: `get_champion_stats`**
+
+1.  A JSON-RPC request for the `get_champion_stats` tool arrives at the `stdio_server.py`.
+2.  The `mcp_handler.py` receives the request and identifies the target tool.
+3.  The handler invokes the `get_champion_stats` function defined in `tools.py`.
+4.  The tool function calls the `StatsService` in `stats_service.py`.
+5.  `StatsService` uses `StatsScraper` from `stats_scraper.py` to fetch the champion's data from the wiki.
+6.  The `StatsScraper` uses functionality from `base_scraper.py` to handle caching and build the correct URL.
+7.  The raw HTML is parsed, and the stats are extracted.
+8.  The data flows back through the layers, is formatted into the final JSON response, and sent back to the client.
 
 ---
 
@@ -280,7 +293,7 @@ Project Taric/Lol_Data_MCP_Server/
 ### Usage Examples
 ```python
 # In Cursor chat or code
-@mcp lol-data get_champion_data {"champion": "Taric"}
+@mcp lol-data get_champion_stats {"champion_name": "Taric"}
 # Returns: Complete Taric data with stats and abilities
 
 @mcp lol-data ping {"message": "Hello from Taric AI project!"}

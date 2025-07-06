@@ -148,7 +148,7 @@ python -m src.mcp_server.stdio_server
 
 ## 🎮 Working Examples
 
-### Get Champion Data  
+### Get Champion Data
 ```python
 # Basic champion data - returns base stats and abilities
 @mcp lol-data get_champion_data {"champion": "Taric"}

@@ -12,16 +12,6 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
-class AbilityType(str, Enum):
-    """Valid ability types for champions"""
-
-    PASSIVE = "passive"
-    Q = "Q"
-    W = "W"
-    E = "E"
-    R = "R"
-
-
 class MCPToolSchema(BaseModel):
     """Base schema for MCP tool definitions"""
 
@@ -60,33 +50,22 @@ class MCPTool(ABC):
 # GetChampionDataInput is now imported from champion_service to avoid circular imports
 
 
-class GetAbilityDetailsInput(BaseModel):
-    """Input schema for get_ability_details tool"""
-
-    champion: str = Field(..., description="Champion name")
-    ability: AbilityType = Field(..., description="Ability slot")
-    level: Optional[int] = Field(
-        None, ge=1, le=18, description="Champion level for scaling calculations"
-    )
-    include_scaling: bool = Field(True, description="Include scaling information")
-
-
 # GetChampionStatsAtLevelInput removed - functionality consolidated into GetChampionDataInput
 
 
 # Tool Implementations
 
 
-class GetChampionDataTool(MCPTool):
-    """Tool for retrieving comprehensive champion information"""
+class GetChampionStatsTool(MCPTool):
+    """Tool for retrieving comprehensive champion statistics"""
 
-    def __init__(self, champion_service=None) -> None:
+    def __init__(self, stats_service=None) -> None:
         super().__init__(
-            name="get_champion_data",
-            description="Get comprehensive champion information including stats, abilities, and builds. Supports level-specific stats when level parameter is provided.",
+            name="get_champion_stats",
+            description="Retrieves comprehensive champion statistics. If a level is provided, it returns the stats for that specific level. If no level is provided, it returns the base stats.",
         )
-        # Champion service injected via dependency injection
-        self._champion_service = champion_service
+        # Stats service injected via dependency injection
+        self._stats_service = stats_service
 
     def get_schema(self) -> MCPToolSchema:
         return MCPToolSchema(
@@ -96,25 +75,11 @@ class GetChampionDataTool(MCPTool):
                 "type": "object",
                 "properties": {
                     "champion": {"type": "string", "description": "Champion name"},
-                    "patch": {
-                        "type": "string",
-                        "default": "current",
-                        "description": "Game patch version",
-                    },
-                    "include": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "enum": ["stats", "abilities", "builds", "history"],
-                        },
-                        "default": ["stats", "abilities"],
-                        "description": "Data sections to include",
-                    },
                     "level": {
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 18,
-                        "description": "Specific level for stats (1-18). If not provided, shows base stats with growth or ranges.",
+                        "description": "Optional specific level for stats (1-18). If not provided, returns base stats.",
                     },
                 },
                 "required": ["champion"],
@@ -122,105 +87,19 @@ class GetChampionDataTool(MCPTool):
         )
 
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute champion data retrieval using ChampionService"""
-        # Use the injected champion service to get actual data
-        if not self._champion_service:
-            raise RuntimeError("ChampionService not properly injected")
+        """Execute champion stats retrieval using StatsService"""
+        if not self._stats_service:
+            raise RuntimeError("StatsService not properly injected")
         
-        result = await self._champion_service.get_champion_data(
+        result = await self._stats_service.get_champion_stats(
             champion=params.get("champion", ""),
-            patch=params.get("patch", "current"),
-            include=params.get("include", ["stats", "abilities"]),
-            level=params.get("level")  # Pass level parameter
+            level=params.get("level")
         )
         
-        # Transform the service response to match the expected API
-        # The service returns "name" but the API should return "champion" for consistency
         if "name" in result:
             result["champion"] = result["name"]
-            # Keep both for backwards compatibility during development
         
         return result
-
-
-class GetAbilityDetailsTool(MCPTool):
-    """Tool for retrieving detailed ability information"""
-
-    def __init__(self, champion_service=None) -> None:
-        super().__init__(
-            name="get_ability_details",
-            description="Get detailed ability information including damage, cooldowns, and scaling",
-        )
-        # Champion service injected via dependency injection
-        self._champion_service = champion_service
-
-    def get_schema(self) -> MCPToolSchema:
-        return MCPToolSchema(
-            name=self.name,
-            description=self.description,
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "champion": {"type": "string", "description": "Champion name"},
-                    "ability": {
-                        "type": "string",
-                        "enum": ["passive", "Q", "W", "E", "R"],
-                        "description": "Ability slot",
-                    },
-                    "level": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 18,
-                        "description": "Champion level for scaling calculations",
-                    },
-                    "include_scaling": {
-                        "type": "boolean",
-                        "default": True,
-                        "description": "Include scaling information",
-                    },
-                },
-                "required": ["champion", "ability"],
-            },
-        )
-
-    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute ability details retrieval using WikiScraper-enabled ChampionService"""
-        validated_params = GetAbilityDetailsInput(**params)
-        
-        try:
-            # Use the injected champion service to get actual data
-            if not self._champion_service:
-                raise RuntimeError("ChampionService not properly injected")
-            
-            champion_data = await self._champion_service.get_champion_data(
-                champion=validated_params.champion,
-                include=["abilities"]  # Only need abilities for this tool
-            )
-            
-            # Extract the specific ability from champion data
-            abilities = champion_data.get("abilities", {})
-            ability_key = validated_params.ability.value.lower()
-            ability_details = abilities.get(ability_key, {})
-            
-            # Return in the same format as before
-            return {
-                "champion": validated_params.champion,
-                "ability": validated_params.ability.value,
-                "level": validated_params.level,
-                "scaling_included": validated_params.include_scaling,
-                "details": ability_details
-            }
-            
-        except Exception as e:
-            # Proper error handling for wiki scraping failures and invalid champions
-            return {
-                "champion": validated_params.champion,
-                "ability": validated_params.ability.value,
-                "level": validated_params.level,
-                "scaling_included": validated_params.include_scaling,
-                "error": f"Failed to retrieve ability data: {str(e)}",
-                "details": {}
-            }
 
 
 # GetChampionStatsAtLevelTool removed - functionality consolidated into GetChampionDataTool
@@ -274,16 +153,7 @@ class ServerInfoTool(MCPTool):
         return MCPToolSchema(
             name=self.name,
             description=self.description,
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "random_string": {
-                        "type": "string",
-                        "description": "Dummy parameter for no-parameter tools",
-                    }
-                },
-                "required": ["random_string"],
-            },
+            input_schema={"type": "object", "properties": {}},
         )
 
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -292,8 +162,8 @@ class ServerInfoTool(MCPTool):
             "name": "lol-data-mcp-server",
             "version": "1.0.0",
             "status": "running",
-            "tools_count": 4,
-            "description": "MCP server for League of Legends champion data"
+            "tools_count": len(tool_registry.get_tool_names()),
+            "description": "MCP server for League of Legends champion data",
         }
 
 
@@ -310,19 +180,19 @@ class ToolRegistry:
         self.register_tool(PingTool())
         self.register_tool(ServerInfoTool())
         
-        # Delay ChampionService import to avoid circular import
+        # Delay StatsService import to avoid circular import
         try:
-            from src.services.champion_service import ChampionService
-            champion_service = ChampionService()
+            from src.services.stats_service import StatsService
+            stats_service = StatsService()
             
-            # Register all LoL tools with injected ChampionService
-            self.register_tool(GetChampionDataTool(champion_service))
-            self.register_tool(GetAbilityDetailsTool(champion_service))
-            # GetChampionStatsAtLevelTool removed - functionality consolidated into GetChampionDataTool
-        except ImportError as e:
-            # Log the error but continue with basic tools
-            print(f"Warning: Could not import ChampionService: {e}")
+            # Register all LoL tools with injected StatsService
+            self.register_tool(GetChampionStatsTool(stats_service))
+        except Exception as e:
+            # Broaden exception handling to catch any error during startup
+            print(f"CRITICAL WARNING: Could not import and register StatsService: {e}")
             print("Only basic tools (ping, server_info) will be available")
+            import traceback
+            traceback.print_exc()
 
     def register_tool(self, tool: MCPTool) -> None:
         """Register a new tool"""

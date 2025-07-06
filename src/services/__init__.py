@@ -5,6 +5,6 @@ This package contains service layer implementations for handling data operations
 and business logic for the LoL Data MCP Server.
 """
 
-from .champion_service import ChampionService
+from .stats_service import StatsService
 
-__all__ = ["ChampionService"]
+__all__ = ["StatsService"]
