@@ -183,7 +183,7 @@ class WikiScraper:
     - LoL Wiki URL handling
     """
     
-    BASE_URL = "https://wiki.leagueoflegends.com/en-us"
+    BASE_URL = "https://wiki.leagueoflegends.com"
     CHAMPION_URL_TEMPLATE = "/{champion_name}"
     
     def __init__(

@@ -896,35 +896,144 @@ This section breaks down the Requirements (R-sections) into granular, sequential
 
 **Verification Results:** ✅ All 15 tests pass, all ability types work, WikiScraper integration functional with proper fallback
 
-#### **Task 2.1.8: Champion Discovery and Validation** *(INCOMPLETE - MAJOR ISSUES)*
-**Objective:** Add champion discovery and validation against LoL Wiki  
-**Files:** `src/services/champion_service.py`, `src/data_sources/scrapers/wiki_scraper.py`  
-**Status:** 🔄 **INCOMPLETE** - Has significant filtering and parsing issues
 
-**Current Issues:**
-1. **Champion discovery returns 282 "champions" instead of expected ~160-170**
-   - Still includes false positives: "Albert Carranza", "Alternate Universes", "Assist", "Aura", "Auto"
-   - Filtering logic needs major improvement to be more restrictive
-2. **WikiScraper test failures:**
-   - `test_find_champion_data_sections` - Overview section detection failing
-   - `test_parse_champion_abilities_success` - Ability name extraction returning None instead of "Bravado"
-3. **Page structure validation missing 'page_valid' key** - Fixed but needs testing
+#### **Task 2.1.8: Implement Per-Level Stat Scraping** *(NEW)*
+**Objective:** Fix incorrect stat calculations by scraping the complete per-level stats table directly from the wiki.
+**Files:** `src/data_sources/scrapers/wiki_scraper.py`, `src/services/champion_service.py`
+**Status:** 🔄 **PENDING** - Required to fix incorrect level-based stat calculations.
 
-**Attempted Fixes:**
-- ✅ Enhanced `_validate_page_structure()` to include missing 'page_valid' key
-- ✅ Improved `_extract_ability_name()` to handle "Passive - Bravado" format
-- ✅ Expanded `_is_valid_champion_name()` filtering with more exclusions
-- ❌ Filtering still insufficient - needs more aggressive false positive removal
+**Instructions:**
+1.  **Integrate Selenium:** Enhance the `WikiScraper` to use a headless browser (e.g., via Selenium) to interact with the champion wiki page.
+2.  **Loop Through Levels:** Implement a method that programmatically loops from level 1 to 18.
+3.  **Select Level from Dropdown:** In each loop iteration, find the level selection dropdown menu and click on the appropriate `<option>` tag for the current level.
+4.  **Scrape Dynamic Stats:** After selecting a level, wait for the page's JavaScript to update the stat values, then scrape the precise stat for that level using the provided CSS selectors (e.g., `span#Health__lvl`).
+5.  **Aggregate All Levels:** Store the scraped stats for all 18 levels in a structured format (e.g., a dictionary mapping stat names to a list of values).
+6.  **Update ChampionService and Tools:** Modify the `ChampionService` to use the newly scraped data.
+    - The `get_champion_stats_at_level` tool should be updated to return stats for a specific level from this data.
+    - The `get_champion_data` tool, by default, should show the min-max range for stats (level 1 and level 18 values).
+7.  **Add Robust Error Handling:** Implement error handling for potential Selenium issues, such as elements not being found or page load timeouts.
 
-**Required to Complete:**
-1. Fix champion discovery filtering to return realistic count (~160 champions)
-2. Resolve remaining WikiScraper test failures  
-3. Implement proper champion existence validation
-4. Add champion name normalization for special characters
-5. Create champion search functionality for partial matches
-6. Add comprehensive error handling
+**Expected Benefits:**
+-   **100% Accurate Stats:** Provides the exact stat values for every level as they appear in-game.
 
-**Verification:** Should validate champion existence, discover ~160 champions, and pass all tests
+**Verification:** The `get_champion_stats_at_level` tool returns the correct stat values for any champion at any level (e.g., Taric level 13 HP is 1730).
+
+#### **Task 2.1.9: Enhanced Champion Basic Stats** *(PENDING)*
+**Objective:** Extend champion stats to include detailed unit information and enhanced metrics
+**Files:** `src/services/champion_service.py`, `src/data_sources/scrapers/wiki_scraper.py`
+**Status:** 🔄 **PENDING** - Enhanced basic stats with unit radius and advanced metrics
+
+**Instructions:**
+1. **Establish Fundamentals:** Create the foundational data structures and models required for the new stats.
+2. Add `unit_radius` field to `ChampionStats` model (only include if mentioned in wiki data)
+3. Implement unit radius extraction from LoL Wiki champion pages
+4. Add `gameplay_radius` for collision detection (only if available)
+5. Extract additional unit stats: `selection_radius`, `pathing_radius` (only if mentioned)
+6. Add advanced stat calculations: `effective_health`, `stat_efficiency`
+7. Implement unit classification (Melee/Ranged/Special)
+8. Add movement speed bonuses and modifiers parsing
+9. **Important**: Only show radius fields if they exist in the data - don't show empty/N/A values
+
+**Expected Benefits:**
+- **Complete unit information** for simulation environments
+- **Collision detection data** for AI positioning algorithms
+- **Enhanced stats** for advanced analysis
+- **Unit classification** for tactical decision making
+
+**Verification:** Returns complete champion stats including unit radius (when available) and advanced metrics
+
+#### **Task 2.1.10: Comprehensive Ability Detail System** *(PENDING)*
+**Objective:** Implement detailed ability information including all gameplay mechanics
+**Files:** `src/services/champion_service.py`, `src/data_sources/scrapers/wiki_scraper.py`
+**Status:** 🔄 **PENDING** - Complete ability details with all game mechanics
+
+**Instructions:**
+1. Extend `ChampionAbility` model with comprehensive fields:
+   - `cooldown` (with ability haste scaling)
+   - `resource_cost` (parse both "consumes X mana" and "generates X fury/rage")
+   - `cast_time` and `channel_time`
+   - `recharge_time` (for charge-based abilities)
+   - `target_range` (minimum and maximum)
+   - `tether_radius` (for abilities like Karma's W)
+   - `effect_radius` (AoE and impact radius)
+2. Add ability scaling extraction (AP/AD/bonus stats ratios)
+3. Implement resource type detection and action (Consumes/Generates Mana, Energy, Rage, etc.)
+4. Add ability interaction data (can be interrupted, displacement immune, etc.)
+5. Extract ability range variations (level-based range scaling)
+6. Add missile speed and projectile data for skillshots
+7. Implement ability state tracking (passive stacks, charges, etc.)
+8. **Important**: Parse resource mechanics like Tryndamere's fury generation vs mana consumption
+
+**Expected Benefits:**
+- **Complete ability mechanics** for AI decision making
+- **Resource management** for optimal ability usage (both generation and consumption)
+- **Range and positioning** data for tactical AI
+- **Ability interactions** for combo detection
+
+**Verification:** Returns comprehensive ability data with all mechanical details including resource generation/consumption
+
+#### **Task 2.1.11: Enhanced get_ability_details Tool with Details Section** *(PENDING)*
+**Objective:** Enhance existing get_ability_details tool with expandable "Details" section (like Taric's E example)
+**Files:** `src/services/champion_service.py`, `src/data_sources/scrapers/wiki_scraper.py`, `src/mcp_server/tools.py`
+**Status:** 🔄 **PENDING** - Enhanced ability details with expandable descriptions
+
+**Instructions:**
+1. Enhance existing `get_ability_details` tool (don't create new tool) to include:
+   - `ability_details` nested object in response:
+     - `full_description` (complete ability explanation from Details tab)
+     - `mechanics_explanation` (how the ability works)
+     - `interaction_notes` (special interactions with other abilities/items)
+     - `scaling_explanation` (how damage/effects scale)
+     - `special_mechanics` (crowd control, damage types, etc.)
+2. Extract detailed ability descriptions from Wiki "Details" tab sections (like Taric E example)
+3. Parse ability interaction information from Details sections:
+   - Spell shield interactions
+   - Displacement immunity
+   - Special targeting rules (like "Targeting input: Unit", "Target out-of-range override: Walk in range")
+4. Add ability damage type classification (Physical, Magic, True)
+5. Extract special mechanics from Details (forgiveness radius, tether mechanics, etc.)
+6. Parse ability ranges and radiuses mentioned in Details sections
+7. **Important**: This enhances the existing tool, doesn't create a separate one
+
+**Expected Benefits:**
+- **Complete ability understanding** from Details sections for AI learning
+- **Interaction knowledge** for counter-play strategies
+- **Special mechanics** understanding (like Taric's forgiveness radius)
+- **Enhanced existing tool** instead of tool proliferation
+
+**Verification:** Enhanced get_ability_details tool returns comprehensive information including Details section content
+
+#### **Task 2.1.12: Patch History Analysis Tool** *(PENDING)*
+**Objective:** Create comprehensive patch history tool for champion and game changes  
+**Files:** `src/mcp_server/tools.py`, `src/services/patch_service.py`  
+**Status:** 🔄 **PENDING** - New MCP tool for patch history queries
+
+**Instructions:**
+1. Create new `get_patch_history` MCP tool with parameters:
+   - `champion_name` (optional, for champion-specific changes)
+   - `patch_version` (optional, for specific patch)
+   - `season` (optional, for season-wide changes like "season 14")
+   - `change_type` (optional: "buffs", "nerfs", "reworks", "all")
+   - `date_range` (optional, for time-based queries)
+2. Create `PatchService` class for patch data management:
+   - `get_champion_patch_history()` - champion-specific changes
+   - `get_patch_changes()` - all changes in a specific patch
+   - `get_season_changes()` - season-wide analysis
+   - `search_patch_changes()` - flexible search functionality
+3. Implement patch data extraction from LoL Wiki patch notes (historical data from all seasons)
+4. Add patch change categorization (stat changes, ability reworks, etc.)
+5. Create patch impact analysis (win rate changes, meta shifts)
+6. Add patch comparison functionality (before/after analysis)
+7. Implement patch timeline visualization data
+8. **Important**: Include complete historical patch data going back to early seasons (all available patch history)
+
+**Expected Benefits:**
+- **Complete historical analysis** of champion changes and meta evolution from all seasons
+- **Patch impact tracking** for performance analysis
+- **Meta trend identification** for strategic planning
+- **Comprehensive research data** for balance analysis and AI training
+
+**Verification:** Can query complete patch history by champion, season, or specific patches with detailed change information from all available seasons
 
 ---
 
@@ -1928,3 +2037,13 @@ The enhanced system now provides comprehensive LoL data access, sophisticated ga
 - WikiScraper imports successfully after metric consolidation fix
 - MCP server tools continue to function as expected
 - No breaking changes to existing API contracts
+
+---
+
+## Phase 12: Bug Fixes & Cleanup Tasks
+
+### Task 12.1: Future Bug Fixes and Cleanup
+**Objective:** Reserved for future bug fixes and cleanup tasks  
+**Status:** 🔄 **PENDING** - No current tasks assigned
+
+**Note:** This section is reserved for future bug fixes and cleanup tasks that may arise during development.
