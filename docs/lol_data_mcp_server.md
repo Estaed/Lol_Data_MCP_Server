@@ -897,7 +897,7 @@ This section breaks down the Requirements (R-sections) into granular, sequential
 **Verification Results:** ✅ All 15 tests pass, all ability types work, WikiScraper integration functional with proper fallback
 
 
-#### **Task 2.1.8: Implement Per-Level Stat Scraping** *(COMPLETED)*
+#### ✅ **Task 2.1.8: Implement Per-Level Stat Scraping** *(COMPLETED)*
 **Objective:** Fix incorrect stat calculations by scraping the complete per-level stats table directly from the wiki using level dropdown interaction.
 **Files:** `src/data_sources/scrapers/stats_scraper.py`, `src/services/stats_service.py`, `tests/test_stats_service.py`
 **Status:** ✅ **COMPLETED** - Per-level stat scraping with Selenium dropdown interaction + comprehensive tests
