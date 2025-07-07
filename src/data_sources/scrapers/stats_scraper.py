@@ -35,10 +35,8 @@ LEVEL_SELECTORS = {
     'windup_percent': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(4) > div:nth-child(2) > div.infobox-data-value.statsbox',
     'as_ratio': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(4) > div:nth-child(3) > div.infobox-data-value.statsbox',
     
-    # Additional resource types
-    'energy': '#ResourceBar__lvl',  # Energy uses same selector as mana
-    'energy_regen': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(2) > div:nth-child(4) > div.infobox-data-value.statsbox',  # Energy regen
-    'secondary_bar': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(2) > div:nth-child(4) > div.infobox-data-value.statsbox'  # All secondary bars (Rage, Heat, Flow, etc.)
+    # Additional resource selector for energy regen and secondary bars  
+    'secondary_bar': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(2) > div:nth-child(4) > div.infobox-data-value.statsbox'
 }
 
 # Champion-specific resource selectors - ADD NEW CHAMPIONS HERE
@@ -94,32 +92,46 @@ class StatsScraper(BaseScraper):
             stats = {'level': level}
             
             # First, try to determine resource type by checking what's available
-            resource_type = self._determine_resource_type(driver, champion_name)
+            resource_config = self._determine_resource_type(driver, champion_name)
             
             for stat_name, selector in LEVEL_SELECTORS.items():
                 if stat_name == 'level_dropdown':
                     continue
                 
                 # Skip resource selectors that don't apply to this champion
-                if stat_name in ['energy', 'energy_regen', 'secondary_bar'] and not self._should_use_resource_selector(stat_name, resource_type):
+                if stat_name == 'secondary_bar' and not self._should_use_resource_selector(stat_name, resource_config):
                     continue
                     
                 try:
                     element = driver.find_element(By.CSS_SELECTOR, selector)
                     raw_value = element.text.strip()
                     
-                    # Map resource stats to standardized names
-                    mapped_stat_name = self._map_stat_name(stat_name, resource_type)
-                    stats[mapped_stat_name] = self._parse_stat_value(raw_value)
+                    # Map resource stats to standardized names with proper display formatting
+                    mapped_stat_name = self._map_stat_name(stat_name, resource_config)
+                    
+                    # Format the value based on the stat type
+                    if mapped_stat_name in ['resource', 'resource_regen', 'secondary_bar']:
+                        # Apply proper display name formatting for resource stats
+                        display_name = self._format_resource_display_name(mapped_stat_name, resource_config)
+                        stats[display_name] = self._parse_stat_value(raw_value)
+                    else:
+                        stats[mapped_stat_name] = self._parse_stat_value(raw_value)
+                        
                 except NoSuchElementException:
                     # Only log warning for expected stats
-                    if stat_name not in ['energy', 'energy_regen', 'secondary_bar']:
+                    if stat_name not in ['secondary_bar']:
                         self.logger.warning(f"Stat '{stat_name}' not found for {champion_name}")
-                    mapped_stat_name = self._map_stat_name(stat_name, resource_type)
-                    stats[mapped_stat_name] = None
+                    
+                    # Handle missing resource stats
+                    mapped_stat_name = self._map_stat_name(stat_name, resource_config)
+                    if mapped_stat_name in ['resource', 'resource_regen', 'secondary_bar']:
+                        display_name = self._format_resource_display_name(mapped_stat_name, resource_config)
+                        stats[display_name] = None
+                    else:
+                        stats[mapped_stat_name] = None
             
             # Add resource type information
-            stats['resource_type'] = resource_type
+            stats['resource_type'] = resource_config['primary_type']
             
             self.logger.info(f"Successfully scraped {len(stats)} stats for {champion_name} level {level}")
             return {
@@ -133,86 +145,153 @@ class StatsScraper(BaseScraper):
         finally:
             driver.quit()
 
-    def _determine_resource_type(self, driver, champion_name: str) -> str:
-        """Determine what type of resource this champion uses by examining the page content."""
-        # Check if champion has specific resource mapping first
-        if champion_name in CHAMPION_RESOURCE_SELECTORS:
-            mapping = CHAMPION_RESOURCE_SELECTORS[champion_name]
-            if 'energy' in str(mapping.get('resource', '')):
-                return 'Energy'
-            elif mapping.get('resource') == 'N/A':
-                return 'N/A'
-            else:
-                return 'Mana'
+    def _determine_resource_type(self, driver, champion_name: str) -> Dict[str, str]:
+        """
+        Dynamically determine what resource system this champion uses.
+        Returns a dict with resource configuration for flexible handling.
+        """
+        resource_config = {
+            'primary_type': None,
+            'has_secondary': False,
+            'secondary_type': None
+        }
         
-        # Auto-detect resource type by examining the actual content
+        # Check what resource elements exist on the page
+        has_primary_resource = False
+        has_primary_regen = False
+        has_secondary_bar = False
+        
+        primary_resource_value = None
+        primary_regen_value = None
+        secondary_bar_value = None
+        
+        # Try to find primary resource (mana/energy using documented selector)
         try:
-            # Get the resource value and regen value
-            mana_element = driver.find_element(By.CSS_SELECTOR, LEVEL_SELECTORS['mana'])
-            mana_value = mana_element.text.strip()
-            
-            # Get the resource regen value 
-            mana_regen_element = driver.find_element(By.CSS_SELECTOR, LEVEL_SELECTORS['mana_regen'])
-            mana_regen_value = mana_regen_element.text.strip()
-            
-            # Energy champions typically have 200 energy and 50 energy regen
-            try:
-                resource_val = float(mana_value)
-                regen_val = float(mana_regen_value)
-                
-                # Energy detection: 200 resource + 50 regen is classic energy pattern
-                if resource_val == 200.0 and regen_val == 50.0:
-                    return 'Energy'
-                    
-                # If resource value is exactly 200 but different regen, still likely energy
-                if resource_val == 200.0:
-                    return 'Energy'
-                    
-            except (ValueError, TypeError):
-                pass
-                
-        except NoSuchElementException:
-            # If no mana element found, might be health-cost champion
-            try:
-                # Check if secondary bar exists instead
-                driver.find_element(By.CSS_SELECTOR, LEVEL_SELECTORS['secondary_bar'])
-                return 'Secondary Bar'
-            except NoSuchElementException:
-                # No mana, no secondary bar = health cost champion
-                return 'N/A'
-            
-        # Check if there's a secondary bar in addition to mana (like Gnar)
-        try:
-            driver.find_element(By.CSS_SELECTOR, LEVEL_SELECTORS['secondary_bar'])
-            # Has both mana and secondary bar - the secondary bar is probably the main resource
-            return 'Secondary Bar'
+            primary_element = driver.find_element(By.CSS_SELECTOR, LEVEL_SELECTORS['mana'])
+            primary_resource_value = primary_element.text.strip()
+            has_primary_resource = bool(primary_resource_value)
         except NoSuchElementException:
             pass
             
-        # Default to Mana for standard champions
-        return 'Mana'
-
-    def _should_use_resource_selector(self, stat_name: str, resource_type: str) -> bool:
-        """Check if we should use this resource selector for this champion."""
-        if resource_type == 'Energy' and stat_name in ['energy', 'energy_regen']:
-            return True
-        elif resource_type == 'Secondary Bar' and stat_name == 'secondary_bar':
-            return True
+        # Try to find primary resource regen (using documented selector)
+        try:
+            regen_element = driver.find_element(By.CSS_SELECTOR, LEVEL_SELECTORS['mana_regen'])
+            primary_regen_value = regen_element.text.strip()
+            has_primary_regen = bool(primary_regen_value)
+        except NoSuchElementException:
+            pass
+            
+        # Try to find secondary bar (energy regen position for energy champs, or actual secondary bars)
+        try:
+            secondary_element = driver.find_element(By.CSS_SELECTOR, LEVEL_SELECTORS['secondary_bar'])
+            secondary_bar_value = secondary_element.text.strip()
+            has_secondary_bar = bool(secondary_bar_value)
+        except NoSuchElementException:
+            pass
+        
+        # Determine resource configuration based on what exists
+        if has_primary_resource and has_primary_regen:
+            # Has both primary resource and regen - determine if it's mana or energy
+            try:
+                resource_val = float(primary_resource_value)
+                regen_val = float(primary_regen_value)
+                
+                # Energy champions typically have 200 energy with regen around 50
+                # But we need to be more sophisticated than just checking 200
+                if resource_val == 200.0 and 40.0 <= regen_val <= 60.0:
+                    resource_config['primary_type'] = 'Energy'
+                else:
+                    # Standard mana system
+                    resource_config['primary_type'] = 'Mana'
+                    
+            except (ValueError, TypeError):
+                # Can't parse values, default to mana
+                resource_config['primary_type'] = 'Mana'
+                
+        elif has_primary_resource and not has_primary_regen:
+            # Has primary resource but no regen - could be energy or special case
+            try:
+                resource_val = float(primary_resource_value)
+                if resource_val == 200.0:
+                    # Likely energy champion
+                    resource_config['primary_type'] = 'Energy'
+                else:
+                    resource_config['primary_type'] = 'Mana'
+            except (ValueError, TypeError):
+                resource_config['primary_type'] = 'Mana'
+                
+        elif not has_primary_resource and not has_primary_regen:
+            # No primary resource system - health cost champion
+            resource_config['primary_type'] = 'Health'
+            
         else:
-            return False
+            # Fallback case
+            resource_config['primary_type'] = 'Mana'
+        
+        # Check for secondary bar (Rage, Heat, Flow, Crimson Rush, etc.)
+        # For energy champions, the secondary_bar selector might show their energy regen
+        # For secondary bar champions, it shows their actual secondary resource
+        if has_secondary_bar:
+            if resource_config['primary_type'] == 'Energy':
+                # For energy champs, this is likely their energy regen, not a secondary bar
+                try:
+                    secondary_val = float(secondary_bar_value)
+                    if 40.0 <= secondary_val <= 60.0:
+                        # This is energy regen, not a secondary bar
+                        resource_config['has_secondary'] = False
+                    else:
+                        # Unusual case - energy champ with actual secondary bar
+                        resource_config['has_secondary'] = True
+                        resource_config['secondary_type'] = 'Secondary Bar'
+                except (ValueError, TypeError):
+                    resource_config['has_secondary'] = False
+            else:
+                # For non-energy champs, this is a real secondary bar
+                resource_config['has_secondary'] = True
+                resource_config['secondary_type'] = 'Secondary Bar'
+            
+        return resource_config
 
-    def _map_stat_name(self, stat_name: str, resource_type: str) -> str:
-        """Map internal stat names to standardized output names."""
-        if stat_name == 'energy':
-            return 'resource'
-        elif stat_name == 'energy_regen':
-            return 'resource_regen'
-        elif stat_name == 'secondary_bar':
-            return 'resource_regen'
-        elif stat_name == 'mana':
+    def _should_use_resource_selector(self, stat_name: str, resource_config: Dict[str, str]) -> bool:
+        """Check if we should use this resource selector for this champion."""
+        if stat_name == 'secondary_bar':
+            return resource_config['has_secondary']
+        else:
+            return True  # Use all other selectors (mana, mana_regen are always used)
+
+    def _map_stat_name(self, stat_name: str, resource_config: Dict[str, str]) -> str:
+        """Map internal stat names to standardized output names with resource type info."""
+        if stat_name == 'mana':
             return 'resource'
         elif stat_name == 'mana_regen':
             return 'resource_regen'
+        elif stat_name == 'secondary_bar':
+            return 'secondary_bar'
+        else:
+            return stat_name
+
+    def _format_resource_display_name(self, stat_name: str, resource_config: Dict[str, str]) -> str:
+        """Format the display name for resource stats."""
+        if stat_name == 'resource':
+            if resource_config['primary_type'] == 'Energy':
+                return 'Resource (Energy)'
+            elif resource_config['primary_type'] == 'Mana':
+                return 'Resource (Mana)'
+            elif resource_config['primary_type'] == 'Health':
+                return 'Resource: Uses Health'
+            else:
+                return 'Resource: N/A'
+        elif stat_name == 'resource_regen':
+            if resource_config['primary_type'] == 'Energy':
+                return 'Resource Regen (Energy)'
+            elif resource_config['primary_type'] == 'Mana':
+                return 'Resource Regen (Mana)'
+            elif resource_config['primary_type'] == 'Health':
+                return 'Resource Regen: N/A'
+            else:
+                return 'Resource Regen: N/A'
+        elif stat_name == 'secondary_bar':
+            return 'Secondary Bar'
         else:
             return stat_name
 
