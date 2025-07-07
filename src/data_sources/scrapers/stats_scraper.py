@@ -228,20 +228,21 @@ class StatsScraper(BaseScraper):
         
         # Base selectors for default stat ranges (without level dropdown interaction)
         BASE_SELECTORS = {
-            'hp': '#Health',
-            'mana': '#ResourceBar', 
-            'hp_regen': '#HealthRegen',
-            'mana_regen': '#ResourceRegen',
-            'armor': '#Armor',
-            'attack_damage': '#AttackDamage',
-            'magic_resist': '#MagicResist',
-            'movement_speed': '#MovementSpeed',
-            'attack_range': '#AttackRange',
-            'bonus_attack_speed': '#AttackSpeedBonus',
-            'base_attack_speed': '#AttackSpeed',
-            'critical_damage': 'N/A',  # These need special handling
-            'windup_percent': 'N/A',
-            'as_ratio': 'N/A'
+            'hp': '#Health',  
+            'mana': '#ResourceBar',  
+            'hp_regen': '#HealthRegen',  
+            'mana_regen': '#ResourceRegen',  
+            'armor': '#Armor',  
+            'attack_damage': '#AttackDamage',  
+            'magic_resist': '#MagicResist',  
+            'movement_speed': '#MovementSpeed',  
+            'attack_range': '#AttackRange',  
+            'bonus_attack_speed': '#AttackSpeedBonus',  
+            # Restore the complex selectors that were working
+            'base_attack_speed': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(4) > div:nth-child(1) > div.infobox-data-value.statsbox',
+            'critical_damage': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(2) > div:nth-child(8) > div.infobox-data-value.statsbox',
+            'windup_percent': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(4) > div:nth-child(2) > div.infobox-data-value.statsbox',
+            'as_ratio': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(4) > div:nth-child(3) > div.infobox-data-value.statsbox'
         }
         
         # Extract stats using base selectors
@@ -250,10 +251,6 @@ class StatsScraper(BaseScraper):
         mana_regen_value = None
         
         for stat_name, selector in BASE_SELECTORS.items():
-            if selector == 'N/A':
-                stats[stat_name] = 'N/A'
-                continue
-                
             element = soup.select_one(selector)
             
             if element and element.get_text(strip=True):

@@ -179,8 +179,8 @@ class CacheManager:
 class BaseScraper:
     """Base class for LoL Wiki scrapers"""
 
-    BASE_URL = "https://wiki.leagueoflegends.com/en-us"
-    CHAMPION_URL_TEMPLATE = "/{champion_name}"
+    BASE_URL = "https://wiki.leagueoflegends.com/en-us/"  # Add trailing slash for urljoin
+    CHAMPION_URL_TEMPLATE = "{champion_name}"  # Remove leading slash for relative path
 
     def __init__(
         self,
@@ -323,7 +323,23 @@ class BaseScraper:
         url = self._build_champion_url(champion_name)
         try:
             response = await self._make_request(url)
+            
+            # Handle potential Brotli compression issue
             content = response.text
+            
+            # Check if content seems to be still compressed (binary data instead of text)
+            if len(content) > 100 and not any(char in content for char in ['<', '>', 'html', 'div']):
+                self.logger.warning("Content appears to be compressed, attempting manual decompression")
+                import brotli
+                try:
+                    # Try Brotli decompression
+                    decompressed = brotli.decompress(response.content)
+                    content = decompressed.decode('utf-8')
+                    self.logger.info("Successfully decompressed content manually")
+                except Exception as e:
+                    self.logger.error(f"Manual decompression failed: {e}")
+                    # Fall back to original content
+                    content = response.text
             
             # Cache the new content
             if self.enable_cache:
