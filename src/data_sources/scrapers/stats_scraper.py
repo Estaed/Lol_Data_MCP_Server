@@ -106,6 +106,52 @@ class StatsScraper(BaseScraper):
         finally:
             driver.quit()
 
+    async def scrape_default_stat_ranges(self, champion_name: str) -> Dict[str, Any]:
+        """
+        Scrape default stat ranges from champion page (no Selenium needed).
+        Gets the range values shown by default like "630 – 2483" that appear on first page load.
+        """
+        self.logger.info(f"Scraping default stat ranges for {champion_name}")
+        
+        # Get champion page with regular HTTP request
+        soup = await self.fetch_champion_page(champion_name)
+        
+        # Base selectors for default stat ranges (without level dropdown interaction)
+        BASE_SELECTORS = {
+            'hp': '#Health',
+            'mana': '#ResourceBar', 
+            'hp_regen': '#HealthRegen',
+            'mana_regen': '#ResourceRegen',
+            'armor': '#Armor',
+            'attack_damage': '#AttackDamage',
+            'magic_resist': '#MagicResist',
+            'movement_speed': '#MovementSpeed',
+            'attack_range': '#AttackRange',
+            'bonus_attack_speed': '#AttackSpeedBonus',
+            'base_attack_speed': 'div.infobox-data-value.statsbox',  # Simplified selector
+            'critical_damage': 'div.infobox-data-value.statsbox',     # These will need testing
+            'windup_percent': 'div.infobox-data-value.statsbox',
+            'as_ratio': 'div.infobox-data-value.statsbox'
+        }
+        
+        # Extract stats using base selectors
+        stats = {}
+        for stat_name, selector in BASE_SELECTORS.items():
+            element = soup.select_one(selector)
+            
+            if element and element.get_text(strip=True):
+                raw_value = element.get_text(strip=True)
+                stats[stat_name] = raw_value  # Keep as string for ranges like "630 – 2483"
+            else:
+                self.logger.warning(f"Stat '{stat_name}' not found for {champion_name}")
+                stats[stat_name] = None
+        
+        self.logger.info(f"Successfully scraped {len(stats)} default stat ranges for {champion_name}")
+        return {
+            "stats": stats,
+            "data_source": "wiki_default_ranges"
+        }
+
     def _parse_stat_value(self, text: str) -> Optional[float]:
         """Parse numerical values from stat text."""
         if not text:

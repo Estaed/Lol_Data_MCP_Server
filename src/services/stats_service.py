@@ -92,14 +92,37 @@ class StatsService:
                     "data_source": level_stats_data.get("data_source", "selenium_level_scrape")
                 }
             else:
-                # For base stats (no level specified), we could still use level 1 scraping
-                # This ensures consistent data source but defaults to level 1
-                base_stats_data = await self.stats_scraper.scrape_level_specific_stats(champion_name, 1)
+                # For base stats (no level specified), create ranges from level 1 and 18
+                self.logger.info(f"Creating stat ranges for {champion_name} (level 1-18)")
+                
+                # Get level 1 and level 18 stats
+                level1_data = await self.stats_scraper.scrape_level_specific_stats(champion_name, 1)
+                level18_data = await self.stats_scraper.scrape_level_specific_stats(champion_name, 18)
+                
+                level1_stats = level1_data.get("stats", {})
+                level18_stats = level18_data.get("stats", {})
+                
+                # Create range format "level1 – level18"
+                range_stats = {}
+                for stat_name in level1_stats:
+                    if stat_name == 'level':
+                        continue
+                    
+                    val1 = level1_stats.get(stat_name)
+                    val18 = level18_stats.get(stat_name)
+                    
+                    if val1 is not None and val18 is not None:
+                        if val1 == val18:
+                            range_stats[stat_name] = str(val1)  # Same value at all levels
+                        else:
+                            range_stats[stat_name] = f"{val1} – {val18}"
+                    else:
+                        range_stats[stat_name] = None
                 
                 return {
                     "name": champion_name,
-                    "stats": base_stats_data.get("stats"),
-                    "data_source": "selenium_base_stats"
+                    "stats": range_stats,
+                    "data_source": "calculated_ranges_level_1_18"
                 }
                 
         except (WikiScraperError, ValueError) as e:
