@@ -238,29 +238,89 @@ class StatsScraper(BaseScraper):
             'movement_speed': '#MovementSpeed',
             'attack_range': '#AttackRange',
             'bonus_attack_speed': '#AttackSpeedBonus',
-            'base_attack_speed': 'div.infobox-data-value.statsbox',  # Simplified selector
-            'critical_damage': 'div.infobox-data-value.statsbox',     # These will need testing
-            'windup_percent': 'div.infobox-data-value.statsbox',
-            'as_ratio': 'div.infobox-data-value.statsbox'
+            'base_attack_speed': '#AttackSpeed',
+            'critical_damage': 'N/A',  # These need special handling
+            'windup_percent': 'N/A',
+            'as_ratio': 'N/A'
         }
         
         # Extract stats using base selectors
         stats = {}
+        mana_value = None
+        mana_regen_value = None
+        
         for stat_name, selector in BASE_SELECTORS.items():
+            if selector == 'N/A':
+                stats[stat_name] = 'N/A'
+                continue
+                
             element = soup.select_one(selector)
             
             if element and element.get_text(strip=True):
                 raw_value = element.get_text(strip=True)
                 stats[stat_name] = raw_value  # Keep as string for ranges like "630 – 2483"
+                
+                # Store mana values for resource type detection
+                if stat_name == 'mana':
+                    mana_value = raw_value
+                elif stat_name == 'mana_regen':
+                    mana_regen_value = raw_value
             else:
                 self.logger.warning(f"Stat '{stat_name}' not found for {champion_name}")
                 stats[stat_name] = None
         
-        self.logger.info(f"Successfully scraped {len(stats)} default stat ranges for {champion_name}")
+        # Detect resource type based on default values
+        resource_type = self._detect_resource_type_from_defaults(mana_value, mana_regen_value, champion_name)
+        
+        # Map mana stats to resource stats with proper names
+        processed_stats = {}
+        for stat_name, value in stats.items():
+            if stat_name == 'mana':
+                mapped_name = self._map_stat_name('mana', resource_type)
+                processed_stats[mapped_name] = value
+            elif stat_name == 'mana_regen':
+                mapped_name = self._map_stat_name('mana_regen', resource_type)
+                processed_stats[mapped_name] = value
+            else:
+                mapped_name = self._map_stat_name(stat_name, resource_type)
+                processed_stats[mapped_name] = value
+        
+        # Add resource type for the service layer
+        processed_stats['resource_type'] = resource_type
+        
+        self.logger.info(f"Successfully scraped {len(processed_stats)} default stat ranges for {champion_name}")
         return {
-            "stats": stats,
+            "stats": processed_stats,
             "data_source": "wiki_default_ranges"
         }
+
+    def _detect_resource_type_from_defaults(self, mana_value: str, mana_regen_value: str, champion_name: str) -> str:
+        """Detect resource type from default page values (range format)."""
+        # Check manual mapping first if available
+        if champion_name in CHAMPION_RESOURCE_SELECTORS:
+            mapping = CHAMPION_RESOURCE_SELECTORS[champion_name]
+            if 'energy' in str(mapping.get('resource', '')):
+                return 'Energy'
+            elif mapping.get('resource') == 'N/A':
+                return 'N/A'
+                
+        # Try to detect from the actual values
+        if mana_value and mana_regen_value:
+            try:
+                # For ranges like "200" (constant) or single values
+                if mana_value.strip() == "200" and "50" in mana_regen_value:
+                    return 'Energy'
+                elif mana_value.strip() == "200":
+                    return 'Energy'
+            except (ValueError, AttributeError):
+                pass
+        
+        # If no mana values found, could be health cost
+        if not mana_value or mana_value == 'N/A':
+            return 'N/A'
+            
+        # Default to Mana
+        return 'Mana'
 
     def _parse_stat_value(self, text: str) -> Optional[float]:
         """Parse numerical values from stat text."""

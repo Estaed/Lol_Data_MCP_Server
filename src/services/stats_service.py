@@ -122,43 +122,28 @@ class StatsService:
                     "data_source": level_stats_data.get("data_source", "selenium_level_scrape")
                 }
             else:
-                # For base stats (no level specified), create ranges from level 1 and 18
-                self.logger.info(f"Creating stat ranges for {champion_name} (level 1-18)")
+                # For base stats (no level specified), use faster HTTP scraping for ranges
+                self.logger.info(f"Using default stat ranges for {champion_name} (faster HTTP method)")
                 
-                # Get level 1 and level 18 stats
-                level1_data = await self.stats_scraper.scrape_level_specific_stats(champion_name, 1)
-                level18_data = await self.stats_scraper.scrape_level_specific_stats(champion_name, 18)
+                # Use the faster HTTP method for default ranges
+                default_data = await self.stats_scraper.scrape_default_stat_ranges(champion_name)
+                raw_stats = default_data.get("stats", {})
                 
-                level1_stats = level1_data.get("stats", {})
-                level18_stats = level18_data.get("stats", {})
+                # Process stats with proper resource formatting
+                processed_stats = {}
+                # Use resource type from scraping data
+                resource_type = raw_stats.get('resource_type', 'Mana')
                 
-                # Create range format "level1 – level18" with proper resource handling
-                range_stats = {}
-                resource_type = level1_stats.get('resource_type', 'Mana')
-                
-                for stat_name in level1_stats:
-                    if stat_name in ['level', 'resource_type']:
+                for stat_name, value in raw_stats.items():
+                    if stat_name == 'resource_type':
                         continue
-                    
-                    val1 = level1_stats.get(stat_name)
-                    val18 = level18_stats.get(stat_name)
-                    
-                    # Format stat names properly
                     formatted_stat_name = self._format_stat_name(stat_name, resource_type)
-                    
-                    # Regular stat processing with proper dash
-                    if val1 is not None and val18 is not None:
-                        if val1 == val18:
-                            range_stats[formatted_stat_name] = str(val1)  # Same value at all levels
-                        else:
-                            range_stats[formatted_stat_name] = f"{val1} - {val18}"  # Fixed dash encoding
-                    else:
-                        range_stats[formatted_stat_name] = "N/A"
+                    processed_stats[formatted_stat_name] = value
                 
                 return {
                     "name": champion_name,
-                    "stats": range_stats,
-                    "data_source": "calculated_ranges_level_1_18"
+                    "stats": processed_stats,
+                    "data_source": default_data.get("data_source", "wiki_default_ranges")
                 }
                 
         except (WikiScraperError, ValueError) as e:
