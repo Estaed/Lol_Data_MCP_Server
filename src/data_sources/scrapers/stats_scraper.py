@@ -96,6 +96,7 @@ class StatsScraper(BaseScraper):
             
             # Store secondary bar value for later use
             secondary_bar_value = None
+            primary_resource_value = None
             
             for stat_name, selector in LEVEL_SELECTORS.items():
                 if stat_name == 'level_dropdown':
@@ -112,6 +113,8 @@ class StatsScraper(BaseScraper):
                     # Store secondary bar value for later use
                     if stat_name == 'secondary_bar':
                         secondary_bar_value = raw_value
+                    elif stat_name == 'mana':
+                        primary_resource_value = raw_value
                     
                     # Map resource stats to standardized names with proper display formatting
                     mapped_stat_name = self._map_stat_name(stat_name, resource_config)
@@ -142,6 +145,12 @@ class StatsScraper(BaseScraper):
                     stats[self._format_resource_display_name('secondary_bar', resource_config)] = self._parse_stat_value(secondary_bar_value)
                 else:
                     stats[self._format_resource_display_name('secondary_bar', resource_config)] = None
+            
+            # For energy champions detected from secondary bar, add their energy stats
+            elif resource_config['primary_type'] == 'Energy' and secondary_bar_value and not primary_resource_value:
+                # Energy champion with energy regen in secondary bar position
+                stats[self._format_resource_display_name('resource', resource_config)] = 200.0  # Standard energy amount
+                stats[self._format_resource_display_name('resource_regen', resource_config)] = self._parse_stat_value(secondary_bar_value)
             
             # Add resource type information
             stats['resource_type'] = resource_config['primary_type']
@@ -208,12 +217,24 @@ class StatsScraper(BaseScraper):
                     
             except (ValueError, TypeError):
                 resource_config['primary_type'] = 'Mana'
+        elif secondary_bar_value:
+            # Check if secondary bar value looks like energy regen (40-60 range)
+            try:
+                secondary_val = float(secondary_bar_value)
+                if 40.0 <= secondary_val <= 60.0:
+                    # This is likely an energy champion with energy regen in secondary position
+                    resource_config['primary_type'] = 'Energy'
+                else:
+                    # This is a real secondary bar champion
+                    resource_config['primary_type'] = 'Secondary'
+            except (ValueError, TypeError):
+                resource_config['primary_type'] = 'Secondary'
         else:
             # If no primary resource found, it's a secondary bar champion
             resource_config['primary_type'] = 'Secondary'
         
-        # Check for secondary bar 
-        if secondary_bar_value and resource_config['primary_type'] != 'Energy':
+        # Check for secondary bar (only for non-energy champions)
+        if secondary_bar_value and resource_config['primary_type'] not in ['Energy']:
             resource_config['has_secondary'] = True
             
         return resource_config
