@@ -41,6 +41,12 @@ LEVEL_SELECTORS = {
     'secondary_bar': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(2) > div:nth-child(4) > div.infobox-data-value.statsbox'  # All secondary bars (Rage, Heat, Flow, etc.)
 }
 
+# Champion-specific resource selectors - ADD NEW CHAMPIONS HERE
+# Format: 'ChampionName': {'resource': 'css_selector', 'resource_regen': 'css_selector_or_None'}
+CHAMPION_RESOURCE_SELECTORS = {
+    # Add champion-specific resource selectors here
+    # Example: 'Zed': {'resource': 'energy', 'resource_regen': 'energy_regen'}
+}
 
 class StatsScraper(BaseScraper):
     """
@@ -87,17 +93,34 @@ class StatsScraper(BaseScraper):
 
             # Extract all level-specific stats
             stats = {'level': level}
+            
+            # First, try to determine resource type by checking what's available
+            resource_type = self._determine_resource_type(driver, champion_name)
+            
             for stat_name, selector in LEVEL_SELECTORS.items():
                 if stat_name == 'level_dropdown':
+                    continue
+                
+                # Skip resource selectors that don't apply to this champion
+                if stat_name in ['energy', 'energy_regen', 'secondary_bar'] and not self._should_use_resource_selector(stat_name, resource_type):
                     continue
                     
                 try:
                     element = driver.find_element(By.CSS_SELECTOR, selector)
                     raw_value = element.text.strip()
-                    stats[stat_name] = self._parse_stat_value(raw_value)
+                    
+                    # Map resource stats to standardized names
+                    mapped_stat_name = self._map_stat_name(stat_name, resource_type)
+                    stats[mapped_stat_name] = self._parse_stat_value(raw_value)
                 except NoSuchElementException:
-                    self.logger.warning(f"Stat '{stat_name}' not found for {champion_name}")
-                    stats[stat_name] = None
+                    # Only log warning for expected stats
+                    if stat_name not in ['energy', 'energy_regen', 'secondary_bar']:
+                        self.logger.warning(f"Stat '{stat_name}' not found for {champion_name}")
+                    mapped_stat_name = self._map_stat_name(stat_name, resource_type)
+                    stats[mapped_stat_name] = None
+            
+            # Add resource type information
+            stats['resource_type'] = resource_type
             
             self.logger.info(f"Successfully scraped {len(stats)} stats for {champion_name} level {level}")
             return {
@@ -110,6 +133,61 @@ class StatsScraper(BaseScraper):
             raise WikiScraperError(f"Failed to scrape level {level} stats for {champion_name}") from e
         finally:
             driver.quit()
+
+    def _determine_resource_type(self, driver, champion_name: str) -> str:
+        """Determine what type of resource this champion uses."""
+        # Check if champion has specific resource mapping
+        if champion_name in CHAMPION_RESOURCE_SELECTORS:
+            mapping = CHAMPION_RESOURCE_SELECTORS[champion_name]
+            if 'energy' in str(mapping.get('resource', '')):
+                return 'Energy'
+            elif mapping.get('resource') == 'N/A':
+                return 'N/A'
+            else:
+                return 'Mana'
+        
+        # Try to detect by checking what elements exist
+        try:
+            # Check if energy regen exists (specific selector)
+            driver.find_element(By.CSS_SELECTOR, LEVEL_SELECTORS['energy_regen'])
+            return 'Energy'
+        except NoSuchElementException:
+            pass
+            
+        try:
+            # Check if secondary bar exists
+            driver.find_element(By.CSS_SELECTOR, LEVEL_SELECTORS['secondary_bar'])
+            # Could be Rage, Heat, Flow, etc. - we'll determine specific type later
+            return 'Secondary Bar'
+        except NoSuchElementException:
+            pass
+            
+        # Default to Mana
+        return 'Mana'
+
+    def _should_use_resource_selector(self, stat_name: str, resource_type: str) -> bool:
+        """Check if we should use this resource selector for this champion."""
+        if resource_type == 'Energy' and stat_name in ['energy', 'energy_regen']:
+            return True
+        elif resource_type == 'Secondary Bar' and stat_name == 'secondary_bar':
+            return True
+        else:
+            return False
+
+    def _map_stat_name(self, stat_name: str, resource_type: str) -> str:
+        """Map internal stat names to standardized output names."""
+        if stat_name == 'energy':
+            return 'resource'
+        elif stat_name == 'energy_regen':
+            return 'resource_regen'
+        elif stat_name == 'secondary_bar':
+            return 'resource_regen'
+        elif stat_name == 'mana':
+            return 'resource'
+        elif stat_name == 'mana_regen':
+            return 'resource_regen'
+        else:
+            return stat_name
 
     async def scrape_default_stat_ranges(self, champion_name: str) -> Dict[str, Any]:
         """

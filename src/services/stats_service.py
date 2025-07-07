@@ -52,6 +52,25 @@ class StatsService:
         self.logger.debug(f"Normalized champion name: {name} -> {normalized}")
         return normalized
 
+    def _format_stat_name(self, stat_name: str, resource_type: str) -> str:
+        """Format stat names for display, especially resources."""
+        if stat_name == 'resource':
+            if resource_type == 'N/A':
+                return 'Resource'  # Will show "N/A" as value
+            else:
+                return f'Resource ({resource_type})'
+        elif stat_name == 'resource_regen':
+            if resource_type == 'N/A':
+                return 'Resource Regen'  # Will show "N/A" as value
+            elif resource_type == 'Secondary Bar':
+                return 'Secondary Bar'  # For Rage, Heat, Flow, etc.
+            else:
+                return f'Resource Regen ({resource_type})'
+        else:
+            # Capitalize and format other stat names
+            formatted = stat_name.replace('_', ' ').title()
+            return formatted
+
     async def get_champion_stats(
         self,
         champion: str,
@@ -85,10 +104,21 @@ class StatsService:
                 self.logger.info(f"Using level-specific scraping for {champion_name} level {level}")
                 level_stats_data = await self.stats_scraper.scrape_level_specific_stats(champion_name, level)
                 
+                # Process stats with proper resource formatting
+                raw_stats = level_stats_data.get("stats", {})
+                resource_type = raw_stats.get('resource_type', 'Mana')
+                processed_stats = {}
+                
+                for stat_name, value in raw_stats.items():
+                    if stat_name == 'resource_type':
+                        continue
+                    formatted_stat_name = self._format_stat_name(stat_name, resource_type)
+                    processed_stats[formatted_stat_name] = value
+                
                 return {
                     "name": champion_name,
                     "level": level,
-                    "stats": level_stats_data.get("stats"),
+                    "stats": processed_stats,
                     "data_source": level_stats_data.get("data_source", "selenium_level_scrape")
                 }
             else:
@@ -102,22 +132,28 @@ class StatsService:
                 level1_stats = level1_data.get("stats", {})
                 level18_stats = level18_data.get("stats", {})
                 
-                # Create range format "level1 – level18"
+                # Create range format "level1 – level18" with proper resource handling
                 range_stats = {}
+                resource_type = level1_stats.get('resource_type', 'Mana')
+                
                 for stat_name in level1_stats:
-                    if stat_name == 'level':
+                    if stat_name in ['level', 'resource_type']:
                         continue
                     
                     val1 = level1_stats.get(stat_name)
                     val18 = level18_stats.get(stat_name)
                     
+                    # Format stat names properly
+                    formatted_stat_name = self._format_stat_name(stat_name, resource_type)
+                    
+                    # Regular stat processing with proper dash
                     if val1 is not None and val18 is not None:
                         if val1 == val18:
-                            range_stats[stat_name] = str(val1)  # Same value at all levels
+                            range_stats[formatted_stat_name] = str(val1)  # Same value at all levels
                         else:
-                            range_stats[stat_name] = f"{val1} – {val18}"
+                            range_stats[formatted_stat_name] = f"{val1} - {val18}"  # Fixed dash encoding
                     else:
-                        range_stats[stat_name] = None
+                        range_stats[formatted_stat_name] = "N/A"
                 
                 return {
                     "name": champion_name,
