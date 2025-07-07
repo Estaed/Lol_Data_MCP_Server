@@ -196,9 +196,12 @@ class StatsScraper(BaseScraper):
                 resource_val = float(primary_resource_value)
                 regen_val = float(primary_regen_value)
                 
-                # Energy champions typically have 200 energy with regen around 50
-                # But we need to be more sophisticated than just checking 200
-                if resource_val == 200.0 and 40.0 <= regen_val <= 60.0:
+                # Energy detection - energy champs typically have:
+                # - Resource values of 200, 400, or other fixed amounts
+                # - Regen values typically in the 40-60 range (50 is most common)
+                # - Unlike mana which varies widely and scales with level
+                if (resource_val in [200.0, 400.0] and 40.0 <= regen_val <= 60.0) or \
+                   (resource_val == 200.0 or resource_val == 400.0):
                     resource_config['primary_type'] = 'Energy'
                 else:
                     # Standard mana system
@@ -212,7 +215,7 @@ class StatsScraper(BaseScraper):
             # Has primary resource but no regen - could be energy or special case
             try:
                 resource_val = float(primary_resource_value)
-                if resource_val == 200.0:
+                if resource_val in [200.0, 400.0]:
                     # Likely energy champion
                     resource_config['primary_type'] = 'Energy'
                 else:
@@ -346,23 +349,25 @@ class StatsScraper(BaseScraper):
                 stats[stat_name] = None
         
         # Detect resource type based on default values
-        resource_type = self._detect_resource_type_from_defaults(mana_value, mana_regen_value, champion_name)
+        resource_config = self._detect_resource_type_from_defaults(mana_value, mana_regen_value, champion_name)
         
         # Map mana stats to resource stats with proper names
         processed_stats = {}
         for stat_name, value in stats.items():
             if stat_name == 'mana':
-                mapped_name = self._map_stat_name('mana', resource_type)
-                processed_stats[mapped_name] = value
+                mapped_name = self._map_stat_name('mana', resource_config)
+                display_name = self._format_resource_display_name(mapped_name, resource_config)
+                processed_stats[display_name] = value
             elif stat_name == 'mana_regen':
-                mapped_name = self._map_stat_name('mana_regen', resource_type)
-                processed_stats[mapped_name] = value
+                mapped_name = self._map_stat_name('mana_regen', resource_config)
+                display_name = self._format_resource_display_name(mapped_name, resource_config)
+                processed_stats[display_name] = value
             else:
-                mapped_name = self._map_stat_name(stat_name, resource_type)
+                mapped_name = self._map_stat_name(stat_name, resource_config)
                 processed_stats[mapped_name] = value
         
         # Add resource type for the service layer
-        processed_stats['resource_type'] = resource_type
+        processed_stats['resource_type'] = resource_config['primary_type']
         
         self.logger.info(f"Successfully scraped {len(processed_stats)} default stat ranges for {champion_name}")
         return {
@@ -370,33 +375,37 @@ class StatsScraper(BaseScraper):
             "data_source": "wiki_default_ranges"
         }
 
-    def _detect_resource_type_from_defaults(self, mana_value: str, mana_regen_value: str, champion_name: str) -> str:
+    def _detect_resource_type_from_defaults(self, mana_value: str, mana_regen_value: str, champion_name: str) -> Dict[str, str]:
         """Detect resource type from default page values (range format)."""
-        # Check manual mapping first if available
-        if champion_name in CHAMPION_RESOURCE_SELECTORS:
-            mapping = CHAMPION_RESOURCE_SELECTORS[champion_name]
-            if 'energy' in str(mapping.get('resource', '')):
-                return 'Energy'
-            elif mapping.get('resource') == 'N/A':
-                return 'N/A'
-                
+        resource_config = {
+            'primary_type': None,
+            'has_secondary': False,
+            'secondary_type': None
+        }
+        
         # Try to detect from the actual values
         if mana_value and mana_regen_value:
             try:
-                # For ranges like "200" (constant) or single values
-                if mana_value.strip() == "200" and "50" in mana_regen_value:
-                    return 'Energy'
-                elif mana_value.strip() == "200":
-                    return 'Energy'
+                # For ranges like "200" or "400" (constant) or single values
+                if (mana_value.strip() in ["200", "400"]) and "50" in mana_regen_value:
+                    resource_config['primary_type'] = 'Energy'
+                elif mana_value.strip() in ["200", "400"]:
+                    resource_config['primary_type'] = 'Energy'
+                else:
+                    resource_config['primary_type'] = 'Mana'
             except (ValueError, AttributeError):
-                pass
-        
-        # If no mana values found, could be health cost
-        if not mana_value or mana_value == 'N/A':
-            return 'N/A'
+                resource_config['primary_type'] = 'Mana'
+        elif not mana_value or mana_value == 'N/A':
+            # If no mana values found, could be health cost
+            resource_config['primary_type'] = 'Health'
+        else:
+            # Default to Mana
+            resource_config['primary_type'] = 'Mana'
             
-        # Default to Mana
-        return 'Mana'
+        # For basic stats, we can't easily detect secondary bars, so assume no secondary
+        resource_config['has_secondary'] = False
+        
+        return resource_config
 
     def _parse_stat_value(self, text: str) -> Optional[float]:
         """Parse numerical values from stat text."""
