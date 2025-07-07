@@ -363,8 +363,8 @@ class StatsScraper(BaseScraper):
                 display_name = self._format_resource_display_name(mapped_name, resource_config)
                 processed_stats[display_name] = value
             else:
-                mapped_name = self._map_stat_name(stat_name, resource_config)
-                processed_stats[mapped_name] = value
+                # For non-resource stats, keep original name and don't apply resource formatting
+                processed_stats[stat_name] = value
         
         # Add resource type for the service layer
         processed_stats['resource_type'] = resource_config['primary_type']
