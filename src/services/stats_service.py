@@ -122,27 +122,17 @@ class StatsService:
                     "data_source": level_stats_data.get("data_source", "selenium_level_scrape")
                 }
             else:
-                # For base stats (no level specified), use faster HTTP scraping for ranges
-                self.logger.info(f"Using default stat ranges for {champion_name} (faster HTTP method)")
+                # For base stats (no level specified), use the efficient default ranges method
+                self.logger.info(f"Using efficient default stat ranges for {champion_name} (single HTTP call)")
                 
-                # Use the faster HTTP method for default ranges
+                # Use the improved HTTP method for default ranges - much faster than 2 Selenium calls
                 default_data = await self.stats_scraper.scrape_default_stat_ranges(champion_name)
                 raw_stats = default_data.get("stats", {})
                 
-                # Process stats with proper resource formatting
-                processed_stats = {}
-                # Use resource type from scraping data
-                resource_type = raw_stats.get('resource_type', 'Mana')
-                
-                for stat_name, value in raw_stats.items():
-                    if stat_name == 'resource_type':
-                        continue
-                    formatted_stat_name = self._format_stat_name(stat_name, resource_type)
-                    processed_stats[formatted_stat_name] = value
-                
+                # The new method already formats stats correctly, so just return them
                 return {
                     "name": champion_name,
-                    "stats": processed_stats,
+                    "stats": raw_stats,
                     "data_source": default_data.get("data_source", "wiki_default_ranges")
                 }
                 
