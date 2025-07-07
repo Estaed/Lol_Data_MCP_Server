@@ -44,8 +44,7 @@ LEVEL_SELECTORS = {
 # Champion-specific resource selectors - ADD NEW CHAMPIONS HERE
 # Format: 'ChampionName': {'resource': 'css_selector', 'resource_regen': 'css_selector_or_None'}
 CHAMPION_RESOURCE_SELECTORS = {
-    # Add champion-specific resource selectors here
-    # Example: 'Zed': {'resource': 'energy', 'resource_regen': 'energy_regen'}
+    # Empty - let the system auto-detect resource types
 }
 
 class StatsScraper(BaseScraper):
@@ -135,8 +134,8 @@ class StatsScraper(BaseScraper):
             driver.quit()
 
     def _determine_resource_type(self, driver, champion_name: str) -> str:
-        """Determine what type of resource this champion uses."""
-        # Check if champion has specific resource mapping
+        """Determine what type of resource this champion uses by examining the page content."""
+        # Check if champion has specific resource mapping first
         if champion_name in CHAMPION_RESOURCE_SELECTORS:
             mapping = CHAMPION_RESOURCE_SELECTORS[champion_name]
             if 'energy' in str(mapping.get('resource', '')):
@@ -146,23 +145,51 @@ class StatsScraper(BaseScraper):
             else:
                 return 'Mana'
         
-        # Try to detect by checking what elements exist
+        # Auto-detect resource type by examining the actual content
         try:
-            # Check if energy regen exists (specific selector)
-            driver.find_element(By.CSS_SELECTOR, LEVEL_SELECTORS['energy_regen'])
-            return 'Energy'
-        except NoSuchElementException:
-            pass
+            # Get the resource value and regen value
+            mana_element = driver.find_element(By.CSS_SELECTOR, LEVEL_SELECTORS['mana'])
+            mana_value = mana_element.text.strip()
             
+            # Get the resource regen value 
+            mana_regen_element = driver.find_element(By.CSS_SELECTOR, LEVEL_SELECTORS['mana_regen'])
+            mana_regen_value = mana_regen_element.text.strip()
+            
+            # Energy champions typically have 200 energy and 50 energy regen
+            try:
+                resource_val = float(mana_value)
+                regen_val = float(mana_regen_value)
+                
+                # Energy detection: 200 resource + 50 regen is classic energy pattern
+                if resource_val == 200.0 and regen_val == 50.0:
+                    return 'Energy'
+                    
+                # If resource value is exactly 200 but different regen, still likely energy
+                if resource_val == 200.0:
+                    return 'Energy'
+                    
+            except (ValueError, TypeError):
+                pass
+                
+        except NoSuchElementException:
+            # If no mana element found, might be health-cost champion
+            try:
+                # Check if secondary bar exists instead
+                driver.find_element(By.CSS_SELECTOR, LEVEL_SELECTORS['secondary_bar'])
+                return 'Secondary Bar'
+            except NoSuchElementException:
+                # No mana, no secondary bar = health cost champion
+                return 'N/A'
+            
+        # Check if there's a secondary bar in addition to mana (like Gnar)
         try:
-            # Check if secondary bar exists
             driver.find_element(By.CSS_SELECTOR, LEVEL_SELECTORS['secondary_bar'])
-            # Could be Rage, Heat, Flow, etc. - we'll determine specific type later
+            # Has both mana and secondary bar - the secondary bar is probably the main resource
             return 'Secondary Bar'
         except NoSuchElementException:
             pass
             
-        # Default to Mana
+        # Default to Mana for standard champions
         return 'Mana'
 
     def _should_use_resource_selector(self, stat_name: str, resource_type: str) -> bool:
