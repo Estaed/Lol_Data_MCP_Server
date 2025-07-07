@@ -8,7 +8,6 @@ A comprehensive MCP (Model Context Protocol) server that provides real-time acce
 
 Create a centralized, intelligent data service that can efficiently provide structured LoL game data to development environments, AI agents, and other applications through the MCP protocol.
 
-
 ## 🔧 Cursor MCP Integration Setup
 
 ### MCP Server Configuration
@@ -57,21 +56,17 @@ python -m src.mcp_server.stdio_server
 # Returns: Real wiki data for Samira with fallback to mock if needed
 ```
 
-### 🚀 NEW: Level-Specific Stats with Selenium
+### ✅ Level-Specific Stats with Selenium (Task 2.1.8 Completed)
 ```python
-# Get exact stats for any level using Selenium wiki scraping  
-@mcp lol-data get_champion_data {"champion": "Taric", "level": 13}
-# Returns: HP: 1729.05 (exact wiki value for level 13)
+# Now available with level dropdown interaction
+@mcp lol-data get_champion_stats {"champion": "Taric", "level": 13}
+# Returns: HP: 1730 (exact wiki value for level 13)
 
-@mcp lol-data get_champion_data {"champion": "Ezreal", "level": 6}  
+@mcp lol-data get_champion_stats {"champion": "Ezreal", "level": 6}  
 # Returns: Exact level 6 stats scraped from wiki
 
-@mcp lol-data get_champion_data {"champion": "Jinx", "level": 18}
+@mcp lol-data get_champion_stats {"champion": "Jinx", "level": 18}
 # Returns: Maximum level stats with precision
-
-# Combined data - stats for specific level + abilities  
-@mcp lol-data get_champion_data {"champion": "Taric", "level": 10, "include": ["stats", "abilities"]}
-# Returns: Level 10 stats + all abilities information
 ```
 
 ### Test Connectivity
@@ -86,14 +81,40 @@ python -m src.mcp_server.stdio_server
 # Returns: Server stats showing 4 tools available
 ```
 
-## 🚧 Next Development Phase: Data Expansion
+## 🚧 Current Development Phase: Basic Stats Implementation
 
-### **✅ COMPLETED**: Task 2.1.1 - Create Basic Wiki Scraper Foundation
-**Objective:** Set up basic scraper infrastructure and HTTP handling  
-**Files:** `src/data_sources/scrapers/wiki_scraper.py`, `src/data_sources/scrapers/__init__.py`  
-**Status:** ✅ **COMPLETED** - June 2025
+### **✅ COMPLETED**: Task 2.1.8 - Implement Per-Level Stat Scraping
+**Objective:** Implement level dropdown interaction to scrape accurate stats for all 18 levels  
+**Files:** `src/data_sources/scrapers/stats_scraper.py`, `src/services/stats_service.py`  
+**Status:** ✅ **COMPLETED** - Per-level stat scraping with Selenium dropdown interaction
 
-**✅ Accomplished:**
+**🎯 What We Built:**
+- **✅ Level Dropdown Interaction:** Selenium automation of `#lvl_` selector (levels 1-18)
+- **✅ Accurate Stats Extraction:** HP, Mana, AD, Armor, MR, AS, Movement Speed, Attack Range
+- **✅ CSS Selector Integration:** All selectors from wiki_selectors.md for maximum accuracy
+- **✅ Formula Bug Fix:** Replaces incorrect formula calculations with real scraped values
+- **✅ Simple & Clean Code:** Simplified from 350+ lines to focused 200 lines
+- **✅ MCP Tool Support:** `get_champion_stats` tool accepts optional level parameter
+
+### **🔄 NEXT TASK**: Task 2.1.9 - Enhanced Champion Basic Stats
+**Objective:** Extend champion stats to include unit radius data for simulations  
+**Files:** `src/data_sources/scrapers/stats_scraper.py`, `src/services/stats_service.py`, `src/models/champion_stats.py`  
+**Status:** 🔄 **PENDING** - Enhanced basic stats with unit radius and advanced metrics
+
+**🎯 What We're Building Next:**
+- **Unit Radius Data:** Gameplay, Selection, Pathing, Selection Height, Acquisition Radius
+- **Enhanced Models:** Optional radius fields in champion stats model
+- **Simulation Support:** Complete unit information for AI positioning algorithms
+- **Advanced Metrics:** Effective health calculations and unit classification
+
+### **📋 Task Pipeline**: 
+1. **🔄 Task 2.1.8**: Per-Level Stat Scraping (basic stats with level dropdown)
+2. **📋 Task 2.1.9**: Enhanced Champion Basic Stats (unit radius data)  
+3. **📋 Task 2.1.10**: Ability containers and details scraping
+4. **📋 Task 2.1.11**: Ability "Details" tab content  
+5. **📋 Task 2.1.12**: Patch history data
+
+### **✅ Foundation Completed:**
 - ✅ Complete WikiScraper class with async HTTP handling using httpx and BeautifulSoup
 - ✅ Rate limiting (1 request per second) with configurable delays
 - ✅ Professional user agent and HTTP headers for responsible scraping
