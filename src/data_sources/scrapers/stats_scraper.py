@@ -34,6 +34,15 @@ LEVEL_SELECTORS = {
     'as_ratio': '#mw-content-text > div.mw-parser-output > div.champion-info > div.infobox.lvlselect.type-champion-stats.lvlselect-initialized > div:nth-child(4) > div:nth-child(3) > div.infobox-data-value.statsbox',
 }
 
+# Unit radius labels for Task 2.1.9 (base stats only) - Fixed based on actual HTML structure
+UNIT_RADIUS_LABELS = {
+    'Gameplay radius': 'gameplay_radius',
+    'Select. radius': 'selection_radius', 
+    'Pathing radius': 'pathing_radius',
+    'Selection height': 'selection_height',
+    'Acq. radius': 'acquisition_radius'
+}
+
 # Resource-specific selectors based on champion resource type
 RESOURCE_SELECTORS = {
     'mana': {
@@ -419,11 +428,61 @@ class StatsScraper(BaseScraper):
         stats['As Ratio'] = raw_stats.get('as_ratio')
         stats['Bonus Attack Speed'] = raw_stats.get('bonus_attack_speed')
         
+        # Task 2.1.9: Extract unit radius data for base stats only
+        unit_radius_stats = self._extract_unit_radius_data(soup)
+        if unit_radius_stats:
+            stats.update(unit_radius_stats)
+        
         self.logger.info(f"Successfully scraped {len(stats)} default stat ranges for {champion_name}")
         return {
             "stats": stats,
             "data_source": "wiki_default_ranges"
         }
+
+    def _extract_unit_radius_data(self, soup) -> Dict[str, Optional[str]]:
+        """
+        Extract unit radius data for Task 2.1.9.
+        Only used for base stats, not level-specific stats.
+        
+        Args:
+            soup: BeautifulSoup object of the champion page
+            
+        Returns:
+            Dictionary with unit radius stats or empty dict if not available
+        """
+        import re
+        unit_stats = {}
+        
+        # Extract unit radius data using the actual HTML structure:
+        # Labels are in <span class="glossary"> elements, values are concatenated with labels
+        for label_text, key in UNIT_RADIUS_LABELS.items():
+            try:
+                # Find the container that includes this label and its value
+                # First try to find the specific text pattern
+                all_text = soup.get_text()
+                
+                # Look for pattern like "Gameplay radius65" or "Select. radius110"
+                pattern = rf'{re.escape(label_text)}\s*(\d+)'
+                match = re.search(pattern, all_text, re.IGNORECASE)
+                
+                if match:
+                    value = match.group(1)
+                    # Format stat name for display (e.g., gameplay_radius -> Gameplay Radius)
+                    formatted_name = key.replace('_', ' ').title()
+                    unit_stats[formatted_name] = value
+                    self.logger.debug(f"Extracted {formatted_name}: {value}")
+                else:
+                    self.logger.debug(f"Unit stat '{label_text}' not found or no value")
+                    
+            except Exception as e:
+                self.logger.debug(f"Failed to extract unit stat '{label_text}': {e}")
+        
+        if unit_stats:
+            self.logger.info(f"Successfully extracted {len(unit_stats)} unit radius stats")
+        else:
+            self.logger.debug("No unit radius stats found")
+            
+        return unit_stats
 
     def _determine_resource_type_from_soup(self, soup) -> str:
         """
