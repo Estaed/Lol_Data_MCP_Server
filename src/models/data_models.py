@@ -49,8 +49,39 @@ class ChampionStats(BaseModel):
     acquisition_radius: Optional[float] = Field(None, description="Acquisition radius for targeting")
 
 
+class ChampionAbility(BaseModel):
+    """Champion ability model with dynamic features"""
+    
+    name: str = Field(..., description="Ability name")
+    description: Optional[str] = Field(None, description="Ability description")
+    slot: Optional[str] = Field(None, description="Ability slot (Q, W, E, R, Passive)")
+    
+    # Dynamic ability stats - not all abilities have these
+    cooldown: Optional[str] = Field(None, description="Ability cooldown (may be level-based)")
+    cost: Optional[str] = Field(None, description="Ability cost (mana, energy, etc.)")
+    range: Optional[str] = Field(None, description="Ability range")
+    cast_time: Optional[str] = Field(None, description="Ability cast time")
+    damage: Optional[str] = Field(None, description="Ability damage values")
+    
+    # Additional dynamic fields for future expansion
+    channel_time: Optional[str] = Field(None, description="Channel time for channeled abilities")
+    radius: Optional[str] = Field(None, description="Ability effect radius")
+    duration: Optional[str] = Field(None, description="Effect duration")
+
+
+class ChampionAbilities(BaseModel):
+    """Champion abilities collection model"""
+    
+    passive: Optional[ChampionAbility] = Field(None, description="Passive ability")
+    q: Optional[ChampionAbility] = Field(None, description="Q ability")
+    w: Optional[ChampionAbility] = Field(None, description="W ability")
+    e: Optional[ChampionAbility] = Field(None, description="E ability")
+    r: Optional[ChampionAbility] = Field(None, description="R (Ultimate) ability")
+
+
 class ChampionData(BaseModel):
     """Complete champion data model"""
     
     name: str = Field(..., description="Champion name")
-    stats: Optional[ChampionStats] = Field(None, description="Champion statistics") 
+    stats: Optional[ChampionStats] = Field(None, description="Champion statistics")
+    abilities: Optional[ChampionAbilities] = Field(None, description="Champion abilities") 

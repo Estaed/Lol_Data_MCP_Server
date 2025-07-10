@@ -105,6 +105,51 @@ class GetChampionStatsTool(MCPTool):
 # GetChampionStatsAtLevelTool removed - functionality consolidated into GetChampionDataTool
 
 
+class GetChampionAbilitiesTool(MCPTool):
+    """Tool for retrieving comprehensive champion abilities"""
+
+    def __init__(self, abilities_service=None) -> None:
+        super().__init__(
+            name="get_champion_abilities",
+            description="Retrieves comprehensive champion abilities. If an ability_slot is provided, it returns only that specific ability. If no ability_slot is provided, it returns all abilities.",
+        )
+        # Abilities service injected via dependency injection
+        self._abilities_service = abilities_service
+
+    def get_schema(self) -> MCPToolSchema:
+        return MCPToolSchema(
+            name=self.name,
+            description=self.description,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "champion": {"type": "string", "description": "Champion name"},
+                    "ability_slot": {
+                        "type": "string",
+                        "enum": ["Q", "W", "E", "R", "Passive"],
+                        "description": "Optional specific ability slot (Q, W, E, R, Passive). If not provided, returns all abilities.",
+                    },
+                },
+                "required": ["champion"],
+            },
+        )
+
+    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute champion abilities retrieval using AbilitiesService"""
+        if not self._abilities_service:
+            raise RuntimeError("AbilitiesService not properly injected")
+        
+        result = await self._abilities_service.get_champion_abilities(
+            champion=params.get("champion", ""),
+            ability_slot=params.get("ability_slot")
+        )
+        
+        if "name" in result:
+            result["champion"] = result["name"]
+        
+        return result
+
+
 class PingTool(MCPTool):
     """Basic ping tool for health checking"""
     
@@ -180,16 +225,20 @@ class ToolRegistry:
         self.register_tool(PingTool())
         self.register_tool(ServerInfoTool())
         
-        # Delay StatsService import to avoid circular import
+        # Delay service imports to avoid circular import
         try:
             from src.services.stats_service import StatsService
-            stats_service = StatsService()
+            from src.services.abilities_service import AbilitiesService
             
-            # Register all LoL tools with injected StatsService
+            stats_service = StatsService()
+            abilities_service = AbilitiesService()
+            
+            # Register all LoL tools with injected services
             self.register_tool(GetChampionStatsTool(stats_service))
+            self.register_tool(GetChampionAbilitiesTool(abilities_service))
         except Exception as e:
             # Broaden exception handling to catch any error during startup
-            print(f"CRITICAL WARNING: Could not import and register StatsService: {e}")
+            print(f"CRITICAL WARNING: Could not import and register services: {e}")
             print("Only basic tools (ping, server_info) will be available")
             import traceback
             traceback.print_exc()
