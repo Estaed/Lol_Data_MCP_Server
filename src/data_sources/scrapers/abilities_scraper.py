@@ -117,12 +117,12 @@ class AbilitiesScraper(BaseScraper):
         ability_data = {}
         
         # Extract ability name from container
-        ability_name = self._extract_ability_name(container, ability_slot)
+        ability_name = self._extract_ability_name_from_container(container)
         if ability_name:
             ability_data['name'] = ability_name
         
         # Extract ability description
-        description = self._extract_ability_description(container)
+        description = self._extract_ability_description_from_container(container)
         if description:
             ability_data['description'] = description
         
@@ -133,55 +133,119 @@ class AbilitiesScraper(BaseScraper):
         
         return ability_data if ability_data else None
 
-    def _extract_ability_name(self, container: BeautifulSoup, ability_slot: str) -> Optional[str]:
-        """Extract ability name from container."""
-        # Try multiple strategies to find ability name
-        name_selectors = [
-            '.skill-title .skill-name',
-            '.skill-name',
-            'h3',
-            '.ability-name',
-            'strong'
+    def _extract_ability_name_from_container(self, container: BeautifulSoup) -> str:
+        """Extract ability name from container using multiple strategies."""
+        strategies = [
+            # Strategy 1: Extract from skill_header id attribute (most reliable)
+            self._extract_name_from_skill_header_id,
+            # Strategy 2: Extract from bold text
+            self._extract_name_from_bold_text,
+            # Strategy 3: Extract from headings  
+            self._extract_name_from_headings,
+            # Strategy 4: Extract from spans (fallback)
+            self._extract_name_from_spans
         ]
         
-        for selector in name_selectors:
-            name_element = container.select_one(selector)
-            if name_element and name_element.get_text(strip=True):
-                name = name_element.get_text(strip=True)
-                # Clean up the name (remove extra whitespace, special chars)
-                name = re.sub(r'\s+', ' ', name).strip()
-                # Filter out generic text that isn't an ability name
-                if name and len(name) > 1 and not name.lower() in ['ability', 'passive', 'q', 'w', 'e', 'r']:
-                    return name
+        for strategy in strategies:
+            try:
+                name = strategy(container)
+                if name and name.strip() and len(name.strip()) > 1:
+                    # Clean up the name: replace underscores with spaces, clean formatting
+                    cleaned_name = name.replace('_', ' ').strip()
+                    self.logger.debug(f"Extracted ability name: '{cleaned_name}' using {strategy.__name__}")
+                    return cleaned_name
+            except Exception as e:
+                self.logger.debug(f"Strategy {strategy.__name__} failed: {e}")
+                continue
         
-        # Fallback: return slot name if no specific name found
-        return ABILITY_SLOTS.get(ability_slot, ability_slot.upper())
+        return "Unknown Ability"
+    
+    def _extract_name_from_skill_header_id(self, container: BeautifulSoup) -> str:
+        """Extract ability name from skill_header id attribute."""
+        skill_header = container.select_one('.skill_header')
+        if skill_header and skill_header.get('id'):
+            return skill_header.get('id')
+        return ""
+    
+    def _extract_name_from_bold_text(self, container: BeautifulSoup) -> str:
+        """Extract ability name from bold text."""
+        bold_elements = container.select('b')
+        for bold in bold_elements:
+            text = bold.get_text().strip()
+            # Skip wiki UI elements
+            if text and not text.lower().startswith(('edit', 'current', 'passive:', 'active:')):
+                return text
+        return ""
+    
+    def _extract_name_from_headings(self, container: BeautifulSoup) -> str:
+        """Extract ability name from heading elements."""
+        headings = container.select('h3, h4, h5')
+        for heading in headings:
+            text = heading.get_text().strip()
+            if text and len(text) > 1:
+                return text
+        return ""
+    
+    def _extract_name_from_spans(self, container: BeautifulSoup) -> str:
+        """Extract ability name from span elements."""
+        spans = container.select('span')
+        for span in spans:
+            text = span.get_text().strip()
+            # Skip wiki UI elements and short text
+            if text and len(text) > 3 and not text.lower().startswith(('edit', 'current')):
+                return text
+        return ""
 
-    def _extract_ability_description(self, container: BeautifulSoup) -> Optional[str]:
-        """Extract ability description from container with proper text spacing."""
-        # Use the specific selector from wiki_selectors.md
-        desc_element = container.select_one(ABILITY_DETAIL_SELECTORS['description'])
-        if desc_element:
-            description = self._clean_description_text(desc_element)
-            if description:
-                return description
-        
-        # Fallback: try other description selectors
-        fallback_selectors = [
-            '.ability-description',
-            '.skill-description',
-            'p',
-            'div[class*="description"]'
-        ]
-        
-        for selector in fallback_selectors:
-            desc_element = container.select_one(selector)
-            if desc_element:
-                text = self._clean_description_text(desc_element)
-                if text and len(text) > 20:  # Ensure it's a substantial description
+    def _extract_ability_description_from_container(self, container: BeautifulSoup) -> str:
+        """Extract ability description from container with priority for Active descriptions."""
+        try:
+            # Get all ability-info-description elements
+            desc_elements = container.select('.ability-info-description')
+            
+            if desc_elements:
+                # Strategy 1: Prioritize "Active:" descriptions over "Passive:" ones
+                active_descriptions = []
+                passive_descriptions = []
+                other_descriptions = []
+                
+                for desc in desc_elements:
+                    text = desc.get_text().strip()
+                    if text:
+                        if text.startswith('Active:'):
+                            active_descriptions.append(text)
+                        elif text.startswith('Passive:'):
+                            passive_descriptions.append(text)
+                        else:
+                            other_descriptions.append(text)
+                
+                # Return the first Active description if available
+                if active_descriptions:
+                    self.logger.debug(f"Found {len(active_descriptions)} Active descriptions, using first one")
+                    return active_descriptions[0]
+                
+                # Fallback to first Passive description
+                if passive_descriptions:
+                    self.logger.debug(f"No Active descriptions found, using first Passive description")
+                    return passive_descriptions[0]
+                
+                # Final fallback to other descriptions
+                if other_descriptions:
+                    self.logger.debug(f"Using other description as fallback")
+                    return other_descriptions[0]
+            
+            # Strategy 2: Fallback to paragraph-based extraction
+            self.logger.debug("No ability-info-description found, trying paragraph extraction")
+            paragraphs = container.select('p')
+            for p in paragraphs:
+                text = p.get_text().strip()
+                if text and len(text) > 50 and not text.startswith('Edit'):
                     return text
-        
-        return None
+            
+            return "No description available"
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting ability description: {e}")
+            return "Error extracting description"
 
     def _clean_description_text(self, element: BeautifulSoup) -> Optional[str]:
         """
@@ -362,17 +426,28 @@ class AbilitiesScraper(BaseScraper):
             if cleaned == pattern:
                 return standardized
         
-        # Only do minimal standardization for common variants
-        if cleaned in ['cd', 'cooldown_seconds']:
+        # Enhanced standardization for common variants to prevent duplicates
+        cooldown_variants = ['cd', 'cooldown_seconds', 'mana_cooldown', 'current_grit_cooldown']
+        cost_variants = ['mana_cost', 'cost_mana', 'grit_cost']
+        cast_time_variants = ['cast_time_seconds', 'channel_time', 'cast_time']
+        range_variants = ['target_range', 'attack_range']
+        radius_variants = ['effect_radius', 'radius', 'area_radius']
+        
+        # Map all cooldown variants to 'cooldown'
+        if cleaned in cooldown_variants:
             return 'cooldown'
-        elif cleaned in ['mana_cost', 'cost_mana']:
+        # Map all cost variants to 'cost'
+        elif cleaned in cost_variants:
             return 'cost'
-        elif cleaned in ['cast_time_seconds', 'channel_time']:
+        # Map all cast time variants to 'cast_time'
+        elif cleaned in cast_time_variants:
             return 'cast_time'
-        elif cleaned in ['effect_radius', 'radius']:
-            return 'effect_radius'
-        elif cleaned in ['target_range']:
+        # Map all range variants to 'range'
+        elif cleaned in range_variants:
             return 'range'
+        # Map all radius variants to 'effect_radius'
+        elif cleaned in radius_variants:
+            return 'effect_radius'
         
         return cleaned if cleaned else 'unknown_stat'
 
@@ -388,9 +463,15 @@ class AbilitiesScraper(BaseScraper):
             return True
             
         # Skip if label is too short or meaningless
-        if len(cleaned_label) < 2 or cleaned_label in ['none', 'na', 'n_a']:
+        if len(cleaned_label) < 2:
             return True
             
+        # Skip common stopwords and meaningless labels
+        stopwords = ['non', 'a', 'an', 'the', 'and', 'or', 'but', 'for', 'on', 'at', 'to', 'up', 'by', 'of', 'in', 'it', 'is', 'be', 'as', 'no', 'so', 'do', 'go', 'we', 'me', 'my', 'he', 'she', 'his', 'her', 'him', 'you', 'i', 'us', 'our', 'they', 'them', 'this', 'that', 'what', 'when', 'where', 'why', 'how', 'who', 'all', 'any', 'some', 'many', 'few', 'one', 'two', 'three', 'yes', 'no', 'true', 'false', 'never', 'always', 'often', 'much', 'more', 'most', 'less', 'than', 'like', 'about', 'very', 'also', 'too', 'from', 'with', 'without', 'get', 'give', 'take', 'make', 'have', 'let', 'put', 'set', 'keep', 'hold', 'come', 'go', 'move', 'run', 'walk', 'turn', 'look', 'see', 'hear', 'know', 'think', 'feel', 'want', 'need', 'like', 'love', 'try', 'work', 'play', 'use', 'buy', 'sell', 'find', 'win', 'lose', 'hit', 'cut', 'fix', 'good', 'bad', 'big', 'small', 'long', 'short', 'high', 'low', 'hot', 'cold', 'fast', 'slow', 'new', 'old', 'right', 'left', 'here', 'there', 'now', 'then', 'today', 'can', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'shall']
+        
+        if cleaned_label in stopwords:
+            return True
+        
         return False
 
     async def scrape_ability_details_with_tab(self, champion_name: str, ability_slot: str) -> Dict[str, Any]:
