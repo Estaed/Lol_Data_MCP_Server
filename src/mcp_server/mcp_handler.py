@@ -200,10 +200,12 @@ class MCPHandler:
         if tool:
             try:
                 result = await tool.execute(arguments)
+                # Return structured JSON data instead of stringified result
+                import json
                 return {
                     "jsonrpc": "2.0",
                     "id": message_id,
-                    "result": {"content": [{"type": "text", "text": str(result)}]},
+                    "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]},
                 }
             except Exception as e:
                 logger.error("Tool execution failed", tool_name=tool_name, error=str(e))

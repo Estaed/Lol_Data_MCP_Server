@@ -124,6 +124,7 @@ Project Taric/
    - Run existing tests to ensure no regressions
    - Test manually if needed
    - Ensure >80% test coverage
+   - **🔄 MCP SERVER TESTING**: When testing MCP server changes, wait 10 seconds for user to restart server before testing tools
 
 6. **📚 UPDATE DOCUMENTATION**
    - **ALWAYS update README.md** if folder structure changes

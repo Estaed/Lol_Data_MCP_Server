@@ -158,11 +158,11 @@ class AbilitiesScraper(BaseScraper):
         return ABILITY_SLOTS.get(ability_slot, ability_slot.upper())
 
     def _extract_ability_description(self, container: BeautifulSoup) -> Optional[str]:
-        """Extract ability description from container."""
+        """Extract ability description from container with proper text spacing."""
         # Use the specific selector from wiki_selectors.md
         desc_element = container.select_one(ABILITY_DETAIL_SELECTORS['description'])
         if desc_element:
-            description = desc_element.get_text(strip=True)
+            description = self._clean_description_text(desc_element)
             if description:
                 return description
         
@@ -177,76 +177,190 @@ class AbilitiesScraper(BaseScraper):
         for selector in fallback_selectors:
             desc_element = container.select_one(selector)
             if desc_element:
-                text = desc_element.get_text(strip=True)
+                text = self._clean_description_text(desc_element)
                 if text and len(text) > 20:  # Ensure it's a substantial description
                     return text
         
         return None
 
-    def _extract_ability_stats(self, container: BeautifulSoup) -> Dict[str, Any]:
-        """Extract ability stats like cooldown, cost, range, etc."""
-        stats = {}
+    def _clean_description_text(self, element: BeautifulSoup) -> Optional[str]:
+        """
+        Clean description text to remove wiki formatting and preserve readability.
         
-        # Use the stats list selector from wiki_selectors.md
-        stats_container = container.select_one(ABILITY_DETAIL_SELECTORS['stats_list'])
-        if not stats_container:
-            # Try fallback selectors
-            stats_container = container.select_one('.ability-stats') or container
-        
-        if stats_container:
-            # Extract stats text and parse it
-            stats_text = stats_container.get_text()
+        Args:
+            element: BeautifulSoup element containing the description
             
-            # Parse common ability stats using regex patterns
-            stat_patterns = {
-                'cooldown': [
-                    r'(?:cooldown|cd):\s*([0-9/.]+(?:\s*/\s*[0-9/.]+)*)',
-                    r'(?:cooldown|cd)\s+([0-9/.]+(?:\s*/\s*[0-9/.]+)*)',
-                ],
-                'cost': [
-                    r'(?:cost|mana|energy):\s*([0-9/.]+(?:\s*/\s*[0-9/.]+)*)',
-                    r'(?:mana|energy)\s+cost:\s*([0-9/.]+(?:\s*/\s*[0-9/.]+)*)',
-                ],
-                'range': [
-                    r'range:\s*([0-9/.]+)',
-                    r'range\s+([0-9/.]+)',
-                ],
-                'cast_time': [
-                    r'(?:cast time|channel time):\s*([0-9/.]+)',
-                    r'(?:cast|channel)\s+([0-9/.]+)',
-                ],
-                'damage': [
-                    r'(?:damage|physical damage|magic damage):\s*([0-9/.]+(?:\s*/\s*[0-9/.]+)*(?:\s*\([^)]+\))?)',
-                ],
-            }
-            
-            for stat_name, patterns in stat_patterns.items():
-                for pattern in patterns:
-                    match = re.search(pattern, stats_text, re.IGNORECASE)
-                    if match:
-                        value = match.group(1).strip()
-                        # Clean and validate the value
-                        if value and value != '0':
-                            stats[stat_name] = self._parse_stat_value(value)
-                        break  # Use first matching pattern
-        
-        return stats
-
-    def _parse_stat_value(self, value: str) -> str:
-        """Parse and clean stat values."""
-        if not value:
+        Returns:
+            Cleaned text with proper spacing
+        """
+        if not element:
             return None
         
-        # Clean the value
-        value = value.strip()
+        # Use separator=' ' to add spaces between elements
+        text = element.get_text(separator=' ')
         
-        # Handle ranges (e.g., "10/15/20/25/30")
-        if '/' in value:
-            return value  # Keep ranges as strings
+        if not text:
+            return None
         
-        # Handle numbers with units (e.g., "14 seconds")
-        # For abilities, often better to keep as string to preserve units
-        return value
+        # Clean up the text
+        text = self._apply_text_cleaning_rules(text)
+        
+        return text if text and len(text) > 5 else None
+
+    def _apply_text_cleaning_rules(self, text: str) -> str:
+        """Apply minimal text cleaning rules to make wiki text more readable."""
+        if not text:
+            return ""
+        
+        # Step 1: Replace multiple spaces with single spaces
+        text = re.sub(r'\s+', ' ', text)
+        
+        # Step 2: Fix common wiki formatting issues
+        text = re.sub(r'[\u00a0]', ' ', text)  # Remove non-breaking spaces
+        
+        # Step 3: Fix spacing around colons and periods
+        text = re.sub(r'\s*:\s*', ': ', text)
+        text = re.sub(r'\s*\.\s*', '. ', text)
+        
+        # Step 4: Fix Unicode dashes
+        text = text.replace('\u2013', '-').replace('\u2014', '-')
+        
+        # Step 5: Clean up extra whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        return text
+
+    def _extract_ability_stats(self, container: BeautifulSoup) -> Dict[str, Any]:
+        """Extract ability stats using the correct CSS selector from wiki_selectors.md."""
+        stats = {}
+        
+        # Method 1: Use the correct selector from wiki_selectors.md for basic stats
+        stats_container = container.select_one(ABILITY_DETAIL_SELECTORS['stats_list'])
+        
+        if stats_container:
+            self.logger.debug(f"Found stats container with selector: {ABILITY_DETAIL_SELECTORS['stats_list']}")
+            
+            # Extract text content and look for stat patterns
+            stats_text = stats_container.get_text(separator=' ', strip=True)
+            self.logger.debug(f"Raw stats text from container: '{stats_text}'")
+            
+            # Use pattern matching to extract stats
+            self._extract_stats_from_text_patterns(stats_text, stats)
+        
+        # Method 2: ALWAYS process the full container text to catch damage values in descriptions
+        self.logger.debug(f"Processing full container text for damage values and other stats")
+        container_text = container.get_text(separator=' ', strip=True)
+        self.logger.debug(f"Raw container text: '{container_text[:500]}...'")
+        
+        # Extract additional stats from the full container text (this will catch damage values)
+        self._extract_stats_from_text_patterns(container_text, stats)
+        
+        return stats
+    
+    def _extract_stats_from_text_patterns(self, text: str, stats: Dict[str, Any]) -> None:
+        """Extract stats using pattern matching as fallback."""
+        # Enhanced patterns to match various stat formats with proper decimal support
+        # NOTE: Wiki text formats decimals with spaces: "0. 25" instead of "0.25"
+        patterns = [
+            # Pattern 1: "STAT: value" format with blue labels - Handle spaced decimals
+            r'([A-Z\s]+?):\s*([0-9]*\.?\s*[0-9]+(?:\s*[-–/]\s*[0-9]*\.?\s*[0-9]+)*(?:\s*\([^)]+\))?)',
+            
+            # Pattern 2: "Stat Name: value" format (mixed case) - Handle spaced decimals
+            r'([A-Za-z][A-Za-z\s]+?):\s*([0-9]*\.?\s*[0-9]+(?:\s*[-–/]\s*[0-9]*\.?\s*[0-9]+)*(?:\s*\([^)]+\))?)',
+            
+            # Pattern 3: "MAGIC DAMAGE:" or "BONUS MAGIC DAMAGE:" patterns - Handle spaced decimals
+            r'([A-Z\s]*DAMAGE[A-Z\s]*):\s*([0-9]*\.?\s*[0-9]+(?:\s*[-–/]\s*[0-9]*\.?\s*[0-9]+)*(?:\s*\([^)]+\))?)',
+            
+            # Pattern 4: More flexible pattern for edge cases with spaced decimal numbers
+            r'([A-Za-z][A-Za-z\s]{2,}?):\s*([0-9]*\.?\s*[0-9]+(?:\s*[-–/]\s*[0-9]*\.?\s*[0-9]+)*(?:\s*\([^)]+\))?)',
+            
+            # Pattern 5: Specific patterns for damage values in description text
+            r'(Magic Damage|Physical Damage|True Damage|Bonus Magic Damage|Bonus Physical Damage|Healing|Shield|Damage):\s*([0-9]*\.?\s*[0-9]+(?:\s*[-–/]\s*[0-9]*\.?\s*[0-9]+)*(?:\s*\([^)]+\))?)',
+            
+            # Pattern 6: Common ability stat patterns in wiki text
+            r'(COST|COOLDOWN|CAST TIME|EFFECT RADIUS|SPEED|RANGE|WIDTH|TARGET RANGE|RADIUS|CHANNEL TIME|RECHARGE):\s*([0-9]*\.?\s*[0-9]+(?:\s*[-–/]\s*[0-9]*\.?\s*[0-9]+)*(?:\s*\([^)]+\))?)',
+        ]
+        
+        for i, pattern in enumerate(patterns):
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for label, value in matches:
+                label = label.strip()
+                value = value.strip()
+                
+                # Fix spaced decimals: "0. 25" → "0.25", "4 – 1. 33" → "4 – 1.33"
+                value = self._fix_spaced_decimals(value)
+                
+                # Add debugging to see what's being captured
+                self.logger.debug(f"Pattern {i+1} matched: '{label}' = '{value}'")
+                
+                if label and value:
+                    # Clean the label
+                    cleaned_label = self._clean_stat_label_advanced(label)
+                    
+                    if cleaned_label and cleaned_label not in stats:
+                        stats[cleaned_label] = value
+                        self.logger.debug(f"Added stat {cleaned_label}: {value}")
+        
+        # Additional debugging: log what stats were found
+        self.logger.debug(f"Final extracted stats: {stats}")
+    
+    def _fix_spaced_decimals(self, value: str) -> str:
+        """Fix spaced decimals like '0. 25' to '0.25' and '4 – 1. 33' to '4 – 1.33'."""
+        if not value:
+            return value
+        
+        # Pattern to match spaced decimals: number, space, dot, space, number
+        # Examples: "0. 25" → "0.25", "1. 33" → "1.33"
+        fixed_value = re.sub(r'(\d)\s*\.\s*(\d)', r'\1.\2', value)
+        
+        # Fix Unicode dash characters to regular dashes
+        fixed_value = fixed_value.replace('\u2013', '-').replace('\u2014', '-')
+        
+        return fixed_value
+
+    def _clean_stat_label_advanced(self, label: str) -> str:
+        """Simple label cleaning to make labels consistent but preserve original meaning."""
+        if not label:
+            return "unknown_stat"
+        
+        # Convert to lowercase and clean up
+        label = label.lower().strip()
+        
+        # Replace spaces and special characters with underscores
+        cleaned = re.sub(r'[^a-zA-Z0-9\s]', '', label)
+        cleaned = re.sub(r'\s+', '_', cleaned.strip())
+        cleaned = cleaned.strip('_')
+        
+        # Handle specific damage and ability stat patterns
+        damage_patterns = {
+            'magic_damage': 'magic_damage',
+            'physical_damage': 'physical_damage', 
+            'true_damage': 'true_damage',
+            'bonus_magic_damage': 'bonus_magic_damage',
+            'bonus_physical_damage': 'bonus_physical_damage',
+            'healing': 'healing',
+            'shield': 'shield',
+            'damage': 'damage'
+        }
+        
+        # Check for damage patterns first
+        for pattern, standardized in damage_patterns.items():
+            if cleaned == pattern:
+                return standardized
+        
+        # Only do minimal standardization for common variants
+        if cleaned in ['cd', 'cooldown_seconds']:
+            return 'cooldown'
+        elif cleaned in ['mana_cost', 'cost_mana']:
+            return 'cost'
+        elif cleaned in ['cast_time_seconds', 'channel_time']:
+            return 'cast_time'
+        elif cleaned in ['effect_radius', 'radius']:
+            return 'effect_radius'
+        elif cleaned in ['target_range']:
+            return 'range'
+        
+        return cleaned if cleaned else 'unknown_stat'
 
     async def scrape_ability_details_with_tab(self, champion_name: str, ability_slot: str) -> Dict[str, Any]:
         """
