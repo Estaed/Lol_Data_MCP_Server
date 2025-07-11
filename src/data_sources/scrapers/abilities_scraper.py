@@ -274,12 +274,15 @@ class AbilitiesScraper(BaseScraper):
             # Pattern 4: More flexible pattern for edge cases with spaced decimal numbers
             r'([A-Za-z][A-Za-z\s]{2,}?):\s*([0-9]*\.?\s*[0-9]+(?:\s*[-–/]\s*[0-9]*\.?\s*[0-9]+)*(?:\s*\([^)]+\))?)',
             
-            # Pattern 5: Specific patterns for damage values in description text
-            r'(Magic Damage|Physical Damage|True Damage|Bonus Magic Damage|Bonus Physical Damage|Healing|Shield|Damage):\s*([0-9]*\.?\s*[0-9]+(?:\s*[-–/]\s*[0-9]*\.?\s*[0-9]+)*(?:\s*\([^)]+\))?)',
+            # Pattern 5: Specific patterns for damage values in description text (more specific patterns first)
+            r'(Magic Damage|Physical Damage|True Damage|Bonus Magic Damage|Bonus Physical Damage|Healing|Shield|Damage Per Pass|Total Mixed Damage|Total Damage):\s*([0-9]*\.?\s*[0-9]+(?:\s*[-–/]\s*[0-9]*\.?\s*[0-9]+)*(?:\s*\([^)]+\))?)',
             
             # Pattern 6: Common ability stat patterns in wiki text
             r'(COST|COOLDOWN|CAST TIME|EFFECT RADIUS|SPEED|RANGE|WIDTH|TARGET RANGE|RADIUS|CHANNEL TIME|RECHARGE):\s*([0-9]*\.?\s*[0-9]+(?:\s*[-–/]\s*[0-9]*\.?\s*[0-9]+)*(?:\s*\([^)]+\))?)',
         ]
+        
+        # Track values to prevent duplicates
+        seen_values = {}
         
         for i, pattern in enumerate(patterns):
             matches = re.findall(pattern, text, re.IGNORECASE)
@@ -297,8 +300,19 @@ class AbilitiesScraper(BaseScraper):
                     # Clean the label
                     cleaned_label = self._clean_stat_label_advanced(label)
                     
+                    # Filter out unwanted labels
+                    if self._should_skip_label(cleaned_label, label):
+                        self.logger.debug(f"Skipping unwanted label: {cleaned_label} (original: {label})")
+                        continue
+                    
+                    # Check for duplicate values
+                    if value in seen_values:
+                        self.logger.debug(f"Skipping duplicate value '{value}' for '{cleaned_label}' (already exists as '{seen_values[value]}')")
+                        continue
+                    
                     if cleaned_label and cleaned_label not in stats:
                         stats[cleaned_label] = value
+                        seen_values[value] = cleaned_label
                         self.logger.debug(f"Added stat {cleaned_label}: {value}")
         
         # Additional debugging: log what stats were found
@@ -361,6 +375,23 @@ class AbilitiesScraper(BaseScraper):
             return 'range'
         
         return cleaned if cleaned else 'unknown_stat'
+
+    def _should_skip_label(self, cleaned_label: str, original_label: str) -> bool:
+        """Check if a label should be skipped (UI elements, duplicates, etc.)."""
+        
+        # Skip UI editing elements
+        if cleaned_label.startswith('edit_') or original_label.lower().startswith('edit '):
+            return True
+        
+        # Skip generic "damage" if we have more specific damage types
+        if cleaned_label == 'damage' and any(label.endswith('_damage') for label in cleaned_label.split()):
+            return True
+            
+        # Skip if label is too short or meaningless
+        if len(cleaned_label) < 2 or cleaned_label in ['none', 'na', 'n_a']:
+            return True
+            
+        return False
 
     async def scrape_ability_details_with_tab(self, champion_name: str, ability_slot: str) -> Dict[str, Any]:
         """
