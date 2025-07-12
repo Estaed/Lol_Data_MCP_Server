@@ -132,13 +132,22 @@ class AbilitiesService:
                     )
             else:
                 # Return all abilities
-                return {
+                result = {
                     "name": champion_name,
                     "champion": champion_name,  # Add champion field for consistency
                     "abilities": all_abilities,
                     "ability_count": len(all_abilities),
                     "data_source": abilities_data.get("data_source", "wiki_abilities_scrape")
                 }
+                
+                # Include weapon system information if available (for complex champions like Aphelios)
+                if "weapon_system" in abilities_data:
+                    result["weapon_system"] = abilities_data["weapon_system"]
+                    result["weapon_count"] = abilities_data.get("weapon_count", 0)
+                    result["total_descriptions"] = abilities_data.get("total_descriptions", 0)
+                    self.logger.info(f"Added weapon system information for {champion_name}")
+                
+                return result
                 
         except WikiScraperError as e:
             # If it's an invalid ability slot error, re-raise as is
