@@ -199,7 +199,7 @@ class AbilitiesScraper(BaseScraper):
                 driver.quit()
 
     async def _scrape_dual_form_abilities(self, champion_name: str) -> Dict[str, Any]:
-        """Scrape abilities for champions with dual forms using complete container content extraction."""
+        """Scrape abilities for champions with dual forms using tab-based form switching."""
         driver = None
         try:
             driver = self._create_selenium_driver()
@@ -209,10 +209,38 @@ class AbilitiesScraper(BaseScraper):
             # Wait for page to load
             WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             
-            self.logger.info(f"Extracting complete dual-form abilities for {champion_name}")
+            self.logger.info(f"Extracting dual-form abilities for {champion_name} using tab-based approach")
             
-            # For dual-form champions, both forms are contained within the same containers
-            # We need to extract ALL content from each ability container
+            # Try the new tab-based approach for cleaner dual-form extraction
+            dual_form_abilities = await self._extract_abilities_by_form_tabs(driver, champion_name)
+            
+            if dual_form_abilities:
+                # Validate that we actually got different abilities for different forms
+                form_1_abilities = {k: v for k, v in dual_form_abilities.items() if 'Form 1' in k}
+                form_2_abilities = {k: v for k, v in dual_form_abilities.items() if 'Form 2' in k}
+                
+                # Check if the abilities are actually different
+                if form_1_abilities and form_2_abilities:
+                    form_1_names = {v.get('name', '') for v in form_1_abilities.values()}
+                    form_2_names = {v.get('name', '') for v in form_2_abilities.values()}
+                    
+                    if form_1_names == form_2_names:
+                        self.logger.warning(f"Tab-based extraction got identical abilities for both forms, falling back to container method")
+                        # Fall back to container method if we got duplicates
+                        dual_form_abilities = None
+                    else:
+                        self.logger.info(f"Tab-based extraction successful: Form 1 has {form_1_names}, Form 2 has {form_2_names}")
+                
+                if dual_form_abilities:
+                    return {
+                        "abilities": dual_form_abilities,
+                        "dual_form": True,
+                        "extraction_method": "direct_container_extraction",
+                        "data_source": "wiki_abilities_scrape_dual_form_containers"
+                    }
+            
+            # Fallback to container-based method 
+            self.logger.warning(f"Tab-based extraction failed for {champion_name}, falling back to container extraction")
             all_forms_abilities = self._extract_complete_dual_form_abilities(driver, champion_name)
             
             return {
@@ -228,6 +256,264 @@ class AbilitiesScraper(BaseScraper):
         finally:
             if driver:
                 driver.quit()
+
+    async def _extract_abilities_by_form_tabs(self, driver, champion_name: str) -> Optional[Dict[str, Any]]:
+        """Extract abilities directly from both form containers with dynamic form name detection."""
+        try:
+            self.logger.info(f"Extracting dual-form abilities directly from containers for {champion_name}")
+            
+            # First, detect form names from the main page tab headers
+            form_names = self._detect_form_names_from_tabs(driver, champion_name)
+            form1_name = form_names.get('form1', 'Form 1')
+            form2_name = form_names.get('form2', 'Form 2')
+            
+            # Extract abilities from #item-1 (first form)
+            form1_abilities = {}
+            try:
+                form1_container = driver.find_element(By.CSS_SELECTOR, "#item-1")
+                if form1_container:
+                    self.logger.info(f"Found #item-1 container ({form1_name})")
+                    page_source = form1_container.get_attribute('innerHTML')
+                    soup = BeautifulSoup(page_source, 'lxml')
+                    form1_abilities = self._extract_all_abilities_from_soup(soup, form1_name)
+                    self.logger.info(f"Extracted {len(form1_abilities)} {form1_name} abilities: {list(form1_abilities.keys())}")
+            except Exception as e:
+                self.logger.error(f"Failed to extract first form abilities: {e}")
+                return None
+            
+            # Extract abilities from #item-2 (second form)  
+            form2_abilities = {}
+            try:
+                form2_container = driver.find_element(By.CSS_SELECTOR, "#item-2")
+                if form2_container:
+                    self.logger.info(f"Found #item-2 container ({form2_name})")
+                    page_source = form2_container.get_attribute('innerHTML')
+                    soup = BeautifulSoup(page_source, 'lxml')
+                    form2_abilities = self._extract_all_abilities_from_soup(soup, form2_name)
+                    self.logger.info(f"Extracted {len(form2_abilities)} {form2_name} abilities: {list(form2_abilities.keys())}")
+            except Exception as e:
+                self.logger.error(f"Failed to extract second form abilities: {e}")
+                return None
+            
+            # Extract shared abilities (Passive and R) from the main page content
+            shared_abilities = {}
+            try:
+                main_page_source = driver.page_source
+                main_soup = BeautifulSoup(main_page_source, 'lxml')
+                
+                # Extract Passive ability
+                passive_data = self._extract_ability_from_container(main_soup, '.skill_innate', 'passive')
+                if passive_data:
+                    shared_abilities['Passive'] = passive_data
+                    self.logger.info(f"Extracted Passive ability: {passive_data.get('name', 'Unknown')}")
+                
+                # Extract R ability
+                r_data = self._extract_ability_from_container(main_soup, '.skill_r', 'r')
+                if r_data:
+                    shared_abilities['R'] = r_data
+                    self.logger.info(f"Extracted R ability: {r_data.get('name', 'Unknown')}")
+                    
+            except Exception as e:
+                self.logger.error(f"Failed to extract shared abilities: {e}")
+                # Continue without shared abilities if extraction fails
+            
+            # Verify we got different abilities for each form
+            if not form1_abilities or not form2_abilities:
+                self.logger.warning("Could not extract abilities from both form containers")
+                return None
+            
+            # Check that we actually have different abilities
+            form1_names = {v.get('name', '') for v in form1_abilities.values()}
+            form2_names = {v.get('name', '') for v in form2_abilities.values()}
+            
+            if form1_names == form2_names:
+                self.logger.warning("Got identical ability names for both forms")
+                return None
+            
+            self.logger.info(f"SUCCESS: {form1_name} abilities: {form1_names}")
+            self.logger.info(f"SUCCESS: {form2_name} abilities: {form2_names}")
+            
+            # Build the complete dual-form result with proper ordering
+            all_abilities = {}
+            
+            # 1. Add Passive first
+            if 'Passive' in shared_abilities:
+                all_abilities['Passive'] = shared_abilities['Passive']
+            
+            # 2. Add form-specific abilities (Q, W, E) in order
+            for ability_key in ['Q', 'W', 'E']:
+                if ability_key in form1_abilities:
+                    all_abilities[f"{ability_key} ({form1_name})"] = form1_abilities[ability_key]
+                if ability_key in form2_abilities:
+                    all_abilities[f"{ability_key} ({form2_name})"] = form2_abilities[ability_key]
+            
+            # 3. Add R ability at the end
+            if 'R' in shared_abilities:
+                all_abilities['R'] = shared_abilities['R']
+            
+            self.logger.info(f"Complete dual-form result: {len(all_abilities)} abilities total")
+            return all_abilities
+            
+        except Exception as e:
+            self.logger.error(f"Failed to extract dual-form abilities: {e}")
+            return None
+
+    def _detect_form_names_from_tabs(self, driver, champion_name: str) -> Dict[str, str]:
+        """Detect form names from the main page tab headers."""
+        try:
+            # Look for tab elements that contain form names
+            tab_selectors = [
+                "#1",  # First form tab
+                "#2",  # Second form tab
+                ".tabbernav a",  # Alternative tab selector
+                "[id='1']",  # Alternative first form
+                "[id='2']",  # Alternative second form
+            ]
+            
+            detected_forms = {}
+            
+            # Try to find form tabs
+            for selector in tab_selectors:
+                try:
+                    tabs = driver.find_elements(By.CSS_SELECTOR, selector)
+                    if tabs:
+                        for i, tab in enumerate(tabs[:2]):  # Only take first 2 tabs
+                            try:
+                                # Try to get the title or text content
+                                form_name = None
+                                title = tab.get_attribute('title') or ""
+                                text = tab.text.strip() if tab.text else ""
+                                
+                                # Prioritize title attribute if it contains "abilities"
+                                if title and 'abilities' in title.lower():
+                                    form_name = title.replace(' abilities', '').replace(' form', '').strip()
+                                elif text and len(text) > 0 and len(text) < 20:
+                                    # Only use text if it's reasonable length and not generic
+                                    if text not in ['1', '2', 'Current', 'Active', 'Passive', 'SR', 'ARAM', 'Swiftplay']:
+                                        form_name = text.replace(' abilities', '').replace(' form', '').strip()
+                                
+                                if form_name and len(form_name) > 1:
+                                    # Filter out non-form names
+                                    non_form_names = {'current', 'active', 'passive', 'sr', 'aram', 'swiftplay', 'urf', 'nexus'}
+                                    if form_name.lower() not in non_form_names:
+                                        form_name = form_name.capitalize()
+                                        form_key = f'form{i+1}'
+                                        if form_key not in detected_forms:
+                                            detected_forms[form_key] = f"{form_name} Form"
+                                            self.logger.info(f"Detected {form_key}: {form_name} Form from tab")
+                                        
+                            except Exception as e:
+                                self.logger.debug(f"Failed to extract form name from tab: {e}")
+                                continue
+                                
+                except Exception as e:
+                    self.logger.debug(f"Selector {selector} failed: {e}")
+                    continue
+            
+            # If we found form names, return them
+            if detected_forms:
+                return detected_forms
+            
+            # Fallback: Use default form names
+            self.logger.warning(f"Could not detect form names from tabs for {champion_name}, using defaults")
+            return {'form1': 'Form 1', 'form2': 'Form 2'}
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting form names from tabs: {e}")
+            return {'form1': 'Form 1', 'form2': 'Form 2'}
+
+    def _detect_form_name_from_container(self, soup: BeautifulSoup, champion_name: str) -> Optional[str]:
+        """Dynamically detect form name from container content without hard-coding."""
+        try:
+            # Get the main page driver to look for tab headers
+            # This is a more reliable way to detect form names
+            
+            # Strategy 1: Look for form names in the page structure that are common patterns
+            # But don't hard-code - look for specific patterns that indicate forms
+            all_text = soup.get_text().lower()
+            
+            # Strategy 2: Look for words that commonly appear before "form" in League champions
+            import re
+            form_word_patterns = re.findall(r'([a-zA-Z]+)\s+form', all_text, re.IGNORECASE)
+            
+            # Filter to words that are likely actual form names (not UI text)
+            valid_form_words = []
+            for word in form_word_patterns:
+                word_lower = word.lower()
+                # Skip UI words that aren't actual form names
+                ui_words = {'current', 'active', 'passive', 'innate', 'edit', 'this', 'that', 'next', 'previous'}
+                if word_lower not in ui_words and len(word) >= 3:
+                    valid_form_words.append(word.capitalize())
+            
+            # Return the most likely form name
+            if valid_form_words:
+                # Take the first unique form name
+                unique_forms = list(dict.fromkeys(valid_form_words))  # Remove duplicates while preserving order
+                form_name = unique_forms[0]
+                self.logger.info(f"Detected form name: {form_name}")
+                return f"{form_name} Form"
+            
+            # Strategy 3: Fallback - look for title-case words that might be form names
+            title_words = re.findall(r'\b[A-Z][a-z]+\b', soup.get_text())
+            for word in title_words:
+                word_lower = word.lower()
+                # Skip common words that aren't form names
+                common_words = {'active', 'passive', 'innate', 'cost', 'cooldown', 'range', 'edit', 'current', 'ability', 'damage', 'magic', 'bonus', 'target', 'enemy', 'champion', 'seconds', 'increases', 'grants', 'deals', 'takes'}
+                if word_lower not in common_words and len(word) >= 4:
+                    # Check if this word appears multiple times (more likely to be a form name)
+                    if all_text.count(word_lower) >= 2:
+                        form_name = word.capitalize()
+                        self.logger.info(f"Detected form name from repeated word: {form_name}")
+                        return f"{form_name} Form"
+            
+            self.logger.debug("Could not detect form name from container")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting form name: {e}")
+            return None
+
+    def _get_form_name_from_tab(self, tab_element) -> Optional[str]:
+        """Extract form name from a tab element."""
+        try:
+            # Try different attributes and text content
+            sources = [
+                tab_element.get_attribute('title'),
+                tab_element.get_attribute('data-form'),
+                tab_element.get_attribute('data-tab'),
+                tab_element.text.strip(),
+                tab_element.get_attribute('alt')
+            ]
+            
+            for source in sources:
+                if source and source.strip():
+                    form_name = source.strip()
+                    # Clean up common form names
+                    form_name = self._standardize_form_name(form_name)
+                    if form_name:
+                        return form_name
+            
+            return None
+            
+        except Exception as e:
+            self.logger.debug(f"Failed to get form name from tab: {e}")
+            return None
+
+    def _extract_form_abilities_from_active_content(self, driver, form_name: str) -> Dict[str, Any]:
+        """Extract abilities from the currently active form content."""
+        try:
+            # Convert driver page to BeautifulSoup for parsing
+            page_source = driver.page_source
+            soup = BeautifulSoup(page_source, 'lxml')
+            
+            # Extract abilities using our existing method
+            abilities = self._extract_all_abilities_from_soup(soup, form_name)
+            
+            return abilities
+            
+        except Exception as e:
+            self.logger.error(f"Failed to extract abilities from active content for {form_name}: {e}")
+            return {}
 
     def _extract_complete_dual_form_abilities(self, driver, champion_name: str) -> Dict[str, Any]:
         """Extract complete dual-form abilities from all ability containers."""
@@ -832,13 +1118,15 @@ class AbilitiesScraper(BaseScraper):
     def _extract_ability_name_from_container(self, container: BeautifulSoup) -> str:
         """Extract ability name from container using multiple strategies."""
         strategies = [
-            # Strategy 1: Extract from skill_header id attribute (most reliable)
+            # Strategy 1: Extract from the COST pattern (most reliable based on debug)
+            self._extract_name_from_cost_pattern,
+            # Strategy 2: Extract from skill_header id attribute 
             self._extract_name_from_skill_header_id,
-            # Strategy 2: Extract from bold text
+            # Strategy 3: Extract from bold text
             self._extract_name_from_bold_text,
-            # Strategy 3: Extract from headings  
+            # Strategy 4: Extract from headings  
             self._extract_name_from_headings,
-            # Strategy 4: Extract from spans (fallback)
+            # Strategy 5: Extract from spans (fallback)
             self._extract_name_from_spans
         ]
         
@@ -855,6 +1143,30 @@ class AbilitiesScraper(BaseScraper):
                 continue
         
         return "Unknown Ability"
+    
+    def _extract_name_from_cost_pattern(self, container: BeautifulSoup) -> str:
+        """Extract ability name from the COST pattern (most reliable method)."""
+        import re
+        
+        # Get the text content
+        all_text = container.get_text()
+        
+        # Pattern discovered from debug: ability name before "COST:"
+        pattern = r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*COST:'
+        match = re.search(pattern, all_text, re.MULTILINE | re.IGNORECASE)
+        
+        if match:
+            ability_name = match.group(1).strip()
+            # Clean up the name: remove "Edit" prefix and newlines
+            ability_name = re.sub(r'^Edit\s*', '', ability_name, flags=re.IGNORECASE)
+            ability_name = re.sub(r'\n+', ' ', ability_name)
+            ability_name = re.sub(r'\s+', ' ', ability_name).strip()
+            
+            # Filter out generic words
+            if ability_name not in ['Edit', 'Active', 'Passive', 'Innate', 'Nidalee', 'Mana']:
+                return ability_name
+        
+        return ""
     
     def _extract_name_from_skill_header_id(self, container: BeautifulSoup) -> str:
         """Extract ability name from skill_header id attribute."""
