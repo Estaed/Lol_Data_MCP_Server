@@ -169,6 +169,63 @@ class GetChampionAbilitiesTool(MCPTool):
             return result
 
 
+class GetChampionPatchNoteTool(MCPTool):
+    """Tool for retrieving champion patch notes from League of Legends Wiki"""
+
+    def __init__(self, patch_note_service=None) -> None:
+        super().__init__(
+            name="get_champion_patch_note",
+            description="Retrieves patch history for a champion. If no patch version is specified, returns all patch notes. If a specific patch version is provided, returns only that patch note."
+        )
+        self.patch_note_service = patch_note_service
+
+    def get_schema(self) -> MCPToolSchema:
+        return MCPToolSchema(
+            name=self.name,
+            description=self.description,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "champion_name": {
+                        "type": "string",
+                        "description": "Name of the champion to get patch notes for"
+                    },
+                    "patch_version": {
+                        "type": "string",
+                        "description": "Optional specific patch version (e.g., '4.12', '14.21'). If not provided, returns all patch notes."
+                    }
+                },
+                "required": ["champion_name"],
+                "additionalProperties": False
+            }
+        )
+
+    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute the get_champion_patch_note tool"""
+        champion = params.get("champion_name", "").strip()
+        patch_version = params.get("patch_version")
+        
+        if not champion:
+            raise ValueError("champion_name is required")
+        
+        if not self.patch_note_service:
+            raise ValueError("PatchNoteService not available")
+        
+        try:
+            # Get patch notes data
+            patch_data = await self.patch_note_service.get_champion_patch_notes(
+                champion=champion,
+                patch_version=patch_version
+            )
+            
+            return {
+                "success": True,
+                "data": patch_data
+            }
+        except Exception as e:
+            raise ValueError(f"Error retrieving patch notes for {champion}: {str(e)}")
+
+
 class PingTool(MCPTool):
     """Basic ping tool for health checking"""
     
@@ -248,13 +305,16 @@ class ToolRegistry:
         try:
             from src.services.stats_service import StatsService
             from src.services.abilities_service import AbilitiesService
+            from src.services.patch_note_service import PatchNoteService
             
             stats_service = StatsService()
             abilities_service = AbilitiesService()
+            patch_note_service = PatchNoteService()
             
             # Register all LoL tools with injected services
             self.register_tool(GetChampionStatsTool(stats_service))
             self.register_tool(GetChampionAbilitiesTool(abilities_service))
+            self.register_tool(GetChampionPatchNoteTool(patch_note_service))
         except Exception as e:
             # Broaden exception handling to catch any error during startup
             print(f"CRITICAL WARNING: Could not import and register services: {e}")
