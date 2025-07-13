@@ -108,16 +108,16 @@ python -m src.mcp_server.stdio_server
 - **✅ MCP Tool Enhancement:** get_champion_stats now returns unit radius data when appropriate
 - **✅ Zero Regressions:** Enhanced existing functionality without breaking changes
 
-### **🔄 NEXT TASK**: Task 2.1.10 - Comprehensive Ability Detail System
-**Objective:** Implement detailed ability information scraping using ability containers  
-**Files:** `src/data_sources/scrapers/abilities_scraper.py`, `src/services/abilities_service.py`  
-**Status:** 🔄 **PENDING** - Complete ability details with all game mechanics
+### **🔄 NEXT TASK**: Task 2.1.11 - Enhanced get_ability_details MCP Tool with Details Tab
+**Objective:** Add ability details MCP tool with "Details" tab content extraction using Selenium  
+**Files:** `src/mcp_server/tools.py`, integration with `AbilitiesService`  
+**Status:** 🔄 **PENDING** - MCP tool for ability information with Details tab
 
 ### **📋 Task Pipeline**: 
 1. **✅ Task 2.1.8**: Per-Level Stat Scraping (basic stats with level dropdown) ✅
 2. **✅ Task 2.1.9**: Enhanced Champion Basic Stats (unit radius data) ✅  
-3. **🔄 Task 2.1.10**: Ability containers and details scraping
-4. **📋 Task 2.1.11**: Ability "Details" tab content  
+3. **✅ Task 2.1.10**: Comprehensive Ability Detail System (ability containers and details scraping) ✅
+4. **🔄 Task 2.1.11**: Ability "Details" tab content  
 5. **📋 Task 2.1.12**: Patch history data
 
 ### **✅ Foundation Completed:**
@@ -259,7 +259,7 @@ This MCP server is designed to integrate with other LoL development projects:
 - **Real Wiki Values**: Matches official LoL Wiki displayed data perfectly
 - **Clean Implementation**: Only shows data that exists, no empty fields
 
-**🎯 Next Task:** Task 2.1.10 - Comprehensive Ability Detail System
+**🎯 Next Task:** Task 2.1.11 - Enhanced get_ability_details MCP Tool with Details Tab
 
 **📊 Current MCP Server Status:**
 - ✅ **Infrastructure**: 4 MCP tools registered and accessible via Cursor

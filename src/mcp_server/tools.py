@@ -139,15 +139,34 @@ class GetChampionAbilitiesTool(MCPTool):
         if not self._abilities_service:
             raise RuntimeError("AbilitiesService not properly injected")
         
-        result = await self._abilities_service.get_champion_abilities(
-            champion=params.get("champion", ""),
-            ability_slot=params.get("ability_slot")
-        )
+        champion = params.get("champion", "")
+        ability_slot = params.get("ability_slot")
         
-        if "name" in result:
-            result["champion"] = result["name"]
-        
-        return result
+        # If specific ability requested, use enhanced details method
+        if ability_slot:
+            result = await self._abilities_service.get_ability_details(
+                champion=champion,
+                ability_slot=ability_slot
+            )
+            
+            # Format response to maintain compatibility while providing enhanced details
+            return {
+                "champion": result.get("champion", champion),
+                "data_source": result.get("data_source", "wiki_abilities_with_details"),
+                "ability": result.get("ability_details", {}),
+                "name": result.get("champion", champion)
+            }
+        else:
+            # If no specific ability, get all abilities (existing behavior)
+            result = await self._abilities_service.get_champion_abilities(
+                champion=champion,
+                ability_slot=None
+            )
+            
+            if "name" in result:
+                result["champion"] = result["name"]
+            
+            return result
 
 
 class PingTool(MCPTool):

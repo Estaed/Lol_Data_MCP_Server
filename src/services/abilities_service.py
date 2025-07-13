@@ -166,50 +166,145 @@ class AbilitiesService:
         ability_slot: str
     ) -> Dict[str, Any]:
         """
-        Retrieve detailed information for a specific ability.
-        This is for compatibility with existing tools.
+        Retrieve detailed information for a specific ability with enhanced Details tab content.
+        Includes targeting input, damage classification, and counters.
         
         Args:
             champion: Champion name
             ability_slot: Ability slot (Q, W, E, R, Passive)
             
         Returns:
-            Dictionary with detailed ability information
+            Dictionary with detailed ability information including Details tab content
         """
         self.logger.info(
-            "Ability details request",
+            "Enhanced ability details request",
             champion=champion,
             ability_slot=ability_slot
         )
         
-        # Use the main method with ability filtering
-        result = await self.get_champion_abilities(champion, ability_slot)
+        # Normalize inputs
+        normalized_champion = self._normalize_champion_name(champion)
+        normalized_slot = self._normalize_ability_slot(ability_slot)
         
-        # Restructure response for compatibility
-        if "ability" in result:
-            ability_data = result["ability"]
+        if not normalized_slot:
+            raise ValueError(f"Invalid ability slot: {ability_slot}")
+        
+        try:
+            if self.enable_wiki and self.abilities_scraper:
+                # Use enhanced scraping with Details tab
+                result = await self.abilities_scraper.scrape_ability_details_with_tab(
+                    normalized_champion, normalized_slot
+                )
+                
+                if result and "ability" in result:
+                    ability_data = result["ability"]
+                    
+                    # Build comprehensive ability response
+                    enhanced_ability = {
+                        "name": ability_data.get("name", f"{normalized_slot} Ability"),
+                        "description": ability_data.get("description", "Description not available"),
+                        "slot": normalized_slot
+                    }
+                    
+                    # Add basic stats if they exist
+                    basic_fields = ["cooldown", "cost", "range", "cast_time", "damage", "healing", "shield"]
+                    for field in basic_fields:
+                        if field in ability_data:
+                            enhanced_ability[field] = ability_data[field]
+                    
+                    # Add enhanced details from Details tab
+                    enhanced_details = {}
+                    
+                    # Add targeting input
+                    if "targeting_input" in ability_data:
+                        enhanced_details["targeting_input"] = ability_data["targeting_input"]
+                    
+                    # Add damage classification
+                    if "damage_classification" in ability_data:
+                        enhanced_details["damage_classification"] = ability_data["damage_classification"]
+                    
+                    # Add counters
+                    if "counters" in ability_data:
+                        enhanced_details["counters"] = ability_data["counters"]
+                    
+                    # Add additional notes if present
+                    if "additional_notes" in ability_data:
+                        enhanced_details["additional_notes"] = ability_data["additional_notes"]
+                    
+                    # Only add enhanced_details if we have some enhanced content
+                    if enhanced_details:
+                        enhanced_ability["enhanced_details"] = enhanced_details
+                    
+                    return {
+                        "champion": normalized_champion,
+                        "ability_slot": normalized_slot,
+                        "ability_details": enhanced_ability,
+                        "data_source": result.get("data_source", "wiki_abilities_with_details_tab")
+                    }
+                
+                else:
+                    raise WikiScraperError(f"No ability data found for {normalized_champion} {normalized_slot}")
+                    
+            else:
+                # Fallback to basic abilities if wiki is disabled
+                basic_result = await self.get_champion_abilities(normalized_champion, normalized_slot)
+                
+                if "ability" in basic_result:
+                    ability_data = basic_result["ability"]
+                    
+                    enhanced_ability = {
+                        "name": ability_data.get("name", f"{normalized_slot} Ability"),
+                        "description": ability_data.get("description", "Description not available"),
+                        "slot": normalized_slot
+                    }
+                    
+                    # Add available stats
+                    basic_fields = ["cooldown", "cost", "range", "cast_time", "damage"]
+                    for field in basic_fields:
+                        if field in ability_data:
+                            enhanced_ability[field] = ability_data[field]
+                    
+                    return {
+                        "champion": normalized_champion,
+                        "ability_slot": normalized_slot,
+                        "ability_details": enhanced_ability,
+                        "data_source": basic_result.get("data_source", "wiki_disabled_fallback")
+                    }
+                else:
+                    raise WikiScraperError(f"Ability data not found for {normalized_champion} {normalized_slot}")
+                    
+        except WikiScraperError:
+            # Re-raise scraper errors
+            raise
+        except Exception as e:
+            self.logger.error(
+                "Error in enhanced ability details retrieval",
+                champion=normalized_champion,
+                ability_slot=normalized_slot,
+                error=str(e)
+            )
+            # Try fallback to basic abilities
+            try:
+                basic_result = await self.get_champion_abilities(normalized_champion, normalized_slot)
+                if "ability" in basic_result:
+                    ability_data = basic_result["ability"]
+                    
+                    enhanced_ability = {
+                        "name": ability_data.get("name", f"{normalized_slot} Ability"),
+                        "description": ability_data.get("description", "Description not available"),
+                        "slot": normalized_slot
+                    }
+                    
+                    return {
+                        "champion": normalized_champion,
+                        "ability_slot": normalized_slot,
+                        "ability_details": enhanced_ability,
+                        "data_source": "fallback_after_error"
+                    }
+            except Exception as fallback_error:
+                self.logger.error(f"Fallback also failed: {fallback_error}")
             
-            # Ensure we have the essential fields, with dynamic support
-            structured_ability = {
-                "name": ability_data.get("name", f"{ability_slot} Ability"),
-                "description": ability_data.get("description", "Description not available"),
-                "slot": ability_slot
-            }
-            
-            # Add dynamic stats (cooldown, cost, range, etc.) if they exist
-            optional_fields = ["cooldown", "cost", "range", "cast_time", "damage"]
-            for field in optional_fields:
-                if field in ability_data:
-                    structured_ability[field] = ability_data[field]
-            
-            return {
-                "champion": result["name"],
-                "ability_slot": ability_slot,
-                "ability_details": structured_ability,
-                "data_source": result["data_source"]
-            }
-        else:
-            raise WikiScraperError(f"Ability data not found in response for {champion} {ability_slot}")
+            raise ChampionNotFoundError(f"Could not retrieve ability details for {champion} {ability_slot}")
 
     async def cleanup(self):
         """Cleanup resources (AbilitiesScraper, etc.)"""

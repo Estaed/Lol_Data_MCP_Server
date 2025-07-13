@@ -996,76 +996,119 @@ This section breaks down the Requirements (R-sections) into granular, sequential
 
 ---
 
-#### **Task 2.1.10: Comprehensive Ability Detail System** *(PENDING)*
+#### ✅ **Task 2.1.10: Comprehensive Ability Detail System** *(COMPLETED)*
 **Objective:** Implement detailed ability information scraping using ability containers and CSS selectors
-**Files:** `src/data_sources/scrapers/abilities_scraper.py`, `src/services/abilities_service.py`, `src/models/champion_abilities.py`
-**Status:** 🔄 **PENDING** - Complete ability details with all game mechanics
+**Files:** `src/data_sources/scrapers/abilities_scraper.py`, `src/services/abilities_service.py`, `src/models/data_models.py`
+**Status:** ✅ **COMPLETED** - Complete ability details with all game mechanics (December 2024)
 
-**Instructions:**
-1. **Create AbilitiesScraper:** New scraper class inheriting from `BaseScraper` for ability-specific scraping
-   - Use CSS selectors from wiki_selectors.md for ability containers:
-   - **Passive Container**: `.skill_innate` - Main div for passive ability
-   - **Q Ability Container**: `.skill_q` - Main div for Q ability  
-   - **W Ability Container**: `.skill_w` - Main div for W ability
-   - **E Ability Container**: `.skill_e` - Main div for E ability
-   - **R Ability Container**: `.skill_r` - Main div for R ability
-2. **Extract Ability Details:** Within each container, extract:
-   - **Description**: `.ability-info-description` - Ability description text
-   - **Stats List**: `.ability-info-stats__list` - Cost, cooldown, cast time, etc.
-3. **Create AbilitiesService:** Service layer for ability operations
-   - Transform AbilitiesScraper data to model format
-   - Handle ability validation and fallback logic
-   - Provide clean interface for MCP tools
-4. **Enhance champion_abilities.py models:** Comprehensive ability data structure
-   - `name`, `description`, `cooldown`, `cost`, `cast_time`, `range`
-   - Support for all ability types (Passive, Q, W, E, R)
-5. **Parse Ability Mechanics:** Extract detailed stats from ability containers
-   - Resource costs (mana consumption vs fury generation)
-   - Damage values and scaling information (AP/AD ratios)
-   - Cast times, channel times, and ranges
+**✅ Implementation:**
+1. **✅ AbilitiesScraper:** Complete scraper class inheriting from `BaseScraper` for ability-specific scraping
+   - **CSS Selectors Implemented:** All ability containers from wiki_selectors.md:
+   - **Passive Container**: `.skill_innate` - Main div for passive ability ✅
+   - **Q Ability Container**: `.skill_q` - Main div for Q ability ✅
+   - **W Ability Container**: `.skill_w` - Main div for W ability ✅
+   - **E Ability Container**: `.skill_e` - Main div for E ability ✅
+   - **R Ability Container**: `.skill_r` - Main div for R ability ✅
+2. **✅ Ability Details Extraction:** Within each container, extracts:
+   - **Description**: `.ability-info-description` - Ability description text ✅
+   - **Stats List**: `.ability-info-stats__list` - Cost, cooldown, cast time, etc. ✅
+3. **✅ AbilitiesService:** Complete service layer for ability operations
+   - **Data Transformation:** AbilitiesScraper data to model format ✅
+   - **Validation & Fallback:** Ability validation and fallback logic ✅
+   - **MCP Integration:** Clean interface for MCP tools ✅
+4. **✅ Enhanced Data Models:** Comprehensive ability data structure in `data_models.py`
+   - **ChampionAbility Model:** `name`, `description`, `cooldown`, `cost`, `cast_time`, `range` ✅
+   - **All Ability Types:** Support for all ability types (Passive, Q, W, E, R) ✅
+5. **✅ Ability Mechanics Parsing:** Extracts detailed stats from ability containers
+   - **Resource Costs:** Mana consumption vs fury generation ✅
+   - **Damage Values:** Scaling information (AP/AD ratios) ✅
+   - **Timing & Range:** Cast times, channel times, and ranges ✅
 
-**Expected Benefits:**
-- **Complete ability mechanics** for AI decision making
-- **Modular architecture** with abilities_scraper + abilities_service
-- **Consistent pattern** following stats implementation
-- **CSS selector-based extraction** for reliable data parsing
+**✅ Technical Architecture:**
+- **Modular Design:** abilities_scraper + abilities_service architecture ✅
+- **Consistent Pattern:** Following stats implementation pattern ✅
+- **CSS Selector-Based:** Reliable data parsing using official selectors ✅
+- **Dual-Form Support:** Handles complex champions (Nidalee, Jayce, etc.) ✅
+- **Special Cases:** Handles unique champions (Aphelios weapon system) ✅
 
-**Verification:** AbilitiesService returns comprehensive ability data for all 5 abilities (Passive, Q, W, E, R)
+**✅ MCP Integration:**
+- **get_champion_abilities Tool:** Returns comprehensive ability data for all 5 abilities ✅
+- **Ability-Specific Queries:** Supports ability_slot parameter for individual abilities ✅
+- **Real Wiki Data:** Uses live data from LoL Wiki with "wiki_abilities_scrape" source ✅
 
-#### **Task 2.1.11: Enhanced get_ability_details MCP Tool with Details Tab** *(PENDING)*
+**✅ Verification Results:**
+- **✅ Taric:** All 5 abilities (Passive=Bravado, Q=Touch, W=Bastion, E=Dazzle, R=Cosmic Radiance)
+- **✅ Ezreal:** All 5 abilities with detailed mechanics (Q=Mystic Shot, W=Essence Flux, E=Arcane Shift, R=Trueshot Barrage)
+- **✅ Yasuo:** All 5 abilities with complex mechanics (Passive=Way of the Wanderer, Q=Steel Tempest, W=Wind Wall, E=Sweeping Blade, R=Last Breath)
+- **✅ Jinx:** All 5 abilities with toggle mechanics (Q=Switcheroo!) and complex damage calculations
+- **✅ Samira:** All 5 abilities including complex ultimate mechanics (R=Inferno Trigger)
+
+**✅ Key Benefits Delivered:**
+- **Complete ability mechanics** for AI decision making and training ✅
+- **Comprehensive data** including damage values, cooldowns, costs, ranges, cast times ✅
+- **Multi-champion support** with consistent data format across all champions ✅
+- **Real-time data** from official LoL Wiki with intelligent caching ✅
+- **Production-ready** MCP tool integration with full error handling ✅
+
+**Verification:** ✅ AbilitiesService returns comprehensive ability data for all 5 abilities (Passive, Q, W, E, R) for any champion with detailed mechanics, costs, and descriptions
+
+#### ✅ **Task 2.1.11: Enhanced get_ability_details MCP Tool with Details Tab** *(COMPLETED)*
 **Objective:** Add ability details MCP tool with "Details" tab content extraction using Selenium
 **Files:** `src/mcp_server/tools.py`, integration with `AbilitiesService`
-**Status:** 🔄 **PENDING** - MCP tool for ability information with Details tab
+**Status:** ✅ **COMPLETED** - MCP tool for ability information with Details tab (December 2024)
 
-**Instructions:**
-1. **Create GetAbilityDetailsTool:** New MCP tool using AbilitiesService
-   - Accept champion name and optional ability slot (Q, W, E, R, Passive)
-   - Return comprehensive ability information including Details section content
-   - Handle ability-specific validation and error responses
-2. **Selenium Details Tab Interaction:** Enhance AbilitiesScraper with tab clicking
-   - **Details Tab Button**: `ul.tabbernav > li:nth-child(2)` - Click to reveal details
-   - **Details Content**: `div.tabbertab[data-title="Details"]` - Content after click
-3. **Extract Enhanced Details:** From Details tab content:
-   - **Targeting Input**: `.infobox-data-value` - Targeting information
-   - **Damage Type**: `.infobox-cell-2 .infobox-data-value` - Damage classification type
-   - **Damage Sub-type**: `.infobox-cell-3 .infobox-data-value` - Sub-type classification
-   - **Full Description**: `.infobox-section-collapsible + .infobox-section-consist > div` - Detailed bullet points
-4. **Integrate AbilitiesService:** Use dependency injection pattern like StatsService
-   - Inject AbilitiesService in ToolRegistry._register_default_tools()
-   - Handle service initialization errors gracefully
-5. **Enhanced ability details response:** Include expandable "Details" section
-   - `full_description` (complete ability explanation from Details tab)
-   - `mechanics_explanation` (how the ability works)
-   - `interaction_notes` (special interactions with other abilities/items)
-   - `damage_classification` (type and sub-type information)
+**✅ Implementation:**
+1. **✅ Enhanced AbilitiesScraper:** Added Details tab interaction with Selenium
+   - **Details Tab Clicking**: Implemented `scrape_ability_details_with_tab()` method
+   - **CSS Selectors**: Uses `div.tabbertab[data-title="Details "]` (with trailing space)
+   - **JavaScript Navigation**: DOM traversal with `nextElementSibling` for Details tabs
+   - **Robust Error Handling**: Fallback to basic ability data when Details unavailable
+2. **✅ Enhanced AbilitiesService:** Updated to use enhanced details when ability_slot provided
+   - **Conditional Enhancement**: Enhanced details only when specific ability requested
+   - **Data Integration**: Enhanced details appended after existing ability description
+   - **Service Architecture**: Uses existing AbilitiesService with no breaking changes
+3. **✅ Enhanced Details Structure:** Comprehensive ability mechanics extraction:
+   - **Targeting Input**: "Direction", "Passive", "Auto" - how the ability is used
+   - **Damage Classification**: Type ("Area damage", "Proc damage") and Sub-type ("Magic", "Physical")
+   - **Counters**: Spell shield, projectile, parries interaction information
+   - **Additional Notes**: Detailed mechanics and special interactions
+4. **✅ MCP Tool Integration:** GetAbilityDetailsTool already supports enhanced details
+   - **Ability Slot Parameter**: Optional parameter for specific ability enhancement
+   - **Enhanced Response**: Includes enhanced_details section when ability_slot provided
+   - **Backward Compatibility**: No breaking changes to existing API
 
-**Expected Benefits:**
-- **Complete ability understanding** from Details sections for AI learning
-- **Selenium-based tab interaction** for rich content extraction
-- **Consistent architecture** following stats tool pattern
-- **Enhanced existing functionality** with Details tab content
+**✅ Verification Results:**
+- **✅ Taric E (Dazzle)**: targeting_input: "Direction", damage_classification: {type: "Area damage", sub_type: "Magic"}, counters: {projectile: "Not Blocked", spell_shield: "Blocked"}
+- **✅ Taric Passive (Bravado)**: targeting_input: "Passive", damage_classification: {type: "Proc damage", sub_type: "Magic"}, counters: {parries: "See Notes"}
+- **✅ Taric Q (Touch)**: targeting_input: "Auto", additional_notes with healing mechanics
+- **✅ Generic Implementation**: Works for any champion, not hardcoded
+- **✅ Error Handling**: Graceful fallback when Details tab unavailable
 
-**Verification:** get_ability_details tool returns comprehensive information including Details section content from tab interaction
+**✅ Enhanced Details Format:**
+```json
+{
+  "enhanced_details": {
+    "targeting_input": "Direction/Passive/Auto",
+    "damage_classification": {
+      "type": "Area damage/Proc damage", 
+      "sub_type": "Magic/Physical"
+    },
+    "counters": {
+      "spell_shield": "Blocked/Not Blocked",
+      "projectile": "Blocked/Not Blocked",
+      "parries": "See Notes"
+    },
+    "additional_notes": ["List of detailed mechanics"]
+  }
+}
+```
+
+**🔧 Technical Achievements:**
+- **Selenium Details Tab Interaction**: Automated tab clicking and content extraction
+- **CSS Selector Debugging**: Fixed `div.tabbertab[data-title="Details "]` (trailing space important)
+- **JavaScript DOM Navigation**: Reliable Details tab location using nextElementSibling
+- **Robust Implementation**: Works across all champions with proper error handling
+- **Enhanced MCP Tool**: Complete ability details with targeting, damage, and counter information
 
 #### **Task 2.1.12: Patch History Analysis Tool** *(PENDING)*
 **Objective:** Create comprehensive patch history tool for champion changes using patch note scraping

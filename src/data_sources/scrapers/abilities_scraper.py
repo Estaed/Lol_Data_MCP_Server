@@ -1499,24 +1499,287 @@ class AbilitiesScraper(BaseScraper):
     async def scrape_ability_details_with_tab(self, champion_name: str, ability_slot: str) -> Dict[str, Any]:
         """
         Scrape detailed ability information using Selenium to click the Details tab.
-        This is for future Task 2.1.11 implementation.
+        Extracts enhanced details including targeting input, damage classification, and counters.
         
         Args:
             champion_name: Name of champion
             ability_slot: Ability slot (Q, W, E, R, Passive)
             
         Returns:
-            Dictionary with detailed ability information
+            Dictionary with detailed ability information including details tab content
         """
-        # This method is a placeholder for Task 2.1.11
-        # For now, fall back to basic ability scraping
-        all_abilities = await self.scrape_champion_abilities(champion_name)
-        abilities = all_abilities.get('abilities', {})
-        
-        if ability_slot in abilities:
+        driver = None
+        try:
+            # Get base ability data first
+            all_abilities = await self.scrape_champion_abilities(champion_name)
+            abilities = all_abilities.get('abilities', {})
+            
+            if ability_slot not in abilities:
+                raise WikiScraperError(f"Ability {ability_slot} not found for {champion_name}")
+            
+            base_ability = abilities[ability_slot]
+            
+            # Use Selenium to get Details tab content
+            driver = self._create_selenium_driver()
+            url = self._build_champion_url(champion_name)
+            driver.get(url)
+            
+            # Wait for page to load
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            
+            # Find the ability container based on slot
+            ability_container_selector = self._get_ability_container_selector(ability_slot)
+            ability_container = driver.find_element(By.CSS_SELECTOR, ability_container_selector)
+            
+            # Extract details tab content (Details tab comes after the ability container, not inside it)
+            details_content = self._extract_details_tab_content(driver, ability_container)
+            
+            # Combine base ability with enhanced details
+            enhanced_ability = base_ability.copy()
+            if details_content:
+                enhanced_ability.update(details_content)
+            
             return {
-                "ability": abilities[ability_slot],
-                "data_source": "wiki_abilities_scrape"
+                "ability": enhanced_ability,
+                "data_source": "wiki_abilities_with_details_tab"
             }
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting details tab for {champion_name} {ability_slot}: {e}")
+            # Fallback to base ability data
+            all_abilities = await self.scrape_champion_abilities(champion_name)
+            abilities = all_abilities.get('abilities', {})
+            
+            if ability_slot in abilities:
+                return {
+                    "ability": abilities[ability_slot],
+                    "data_source": "wiki_abilities_scrape_fallback"
+                }
+            else:
+                raise WikiScraperError(f"Ability {ability_slot} not found for {champion_name}")
+        finally:
+            if driver:
+                driver.quit()
+
+    def _get_ability_container_selector(self, ability_slot: str) -> str:
+        """Get the CSS selector for the ability container based on slot."""
+        ability_slot_lower = ability_slot.lower()
+        if ability_slot_lower == 'passive':
+            return '.skill_innate'
+        elif ability_slot_lower == 'q':
+            return '.skill_q'
+        elif ability_slot_lower == 'w':
+            return '.skill_w'
+        elif ability_slot_lower == 'e':
+            return '.skill_e'
+        elif ability_slot_lower == 'r':
+            return '.skill_r'
         else:
-            raise WikiScraperError(f"Ability {ability_slot} not found for {champion_name}") 
+            raise ValueError(f"Invalid ability slot: {ability_slot}")
+
+    def _extract_details_tab_content(self, driver, ability_container) -> Dict[str, Any]:
+        """
+        Extract content from the Details tab that follows the ability container.
+        Returns targeting input, damage classification, and counters.
+        """
+        details_data = {}
+        
+        try:
+            # The Details tab comes AFTER the ability container in a separate tabber section
+            # Use XPath to find the next tabbertab with data-title="Details " after this ability container
+            details_container = driver.execute_script("""
+                var abilityContainer = arguments[0];
+                var nextElement = abilityContainer.nextElementSibling;
+                
+                // Look for the next Details tab within a few subsequent elements
+                for (let i = 0; i < 5 && nextElement; i++) {
+                    var detailsTab = nextElement.querySelector('div.tabbertab[data-title="Details "]');
+                    if (detailsTab) {
+                        return detailsTab;
+                    }
+                    nextElement = nextElement.nextElementSibling;
+                }
+                return null;
+            """, ability_container)
+            
+            if not details_container:
+                return details_data
+            
+            # Extract targeting input
+            targeting_input = self._extract_targeting_input_js(driver, details_container)
+            if targeting_input:
+                details_data['targeting_input'] = targeting_input
+            
+            # Extract damage classification
+            damage_classification = self._extract_damage_classification_js(driver, details_container)
+            if damage_classification:
+                details_data['damage_classification'] = damage_classification
+            
+            # Extract counters
+            counters = self._extract_counters_js(driver, details_container)
+            if counters:
+                details_data['counters'] = counters
+            
+            # Extract additional notes/bullets if present
+            additional_notes = self._extract_additional_notes_js(driver, details_container)
+            if additional_notes:
+                details_data['additional_notes'] = additional_notes
+                
+        except Exception as e:
+            self.logger.warning(f"Could not extract details tab content: {e}")
+            # Return empty dict if details tab extraction fails
+            
+        return details_data
+
+    def _extract_targeting_input_js(self, driver, details_container) -> Optional[str]:
+        """Extract targeting input information from details container using JavaScript."""
+        try:
+            targeting_input = driver.execute_script("""
+                var container = arguments[0];
+                if (!container) return null;
+                
+                var rows = container.querySelectorAll('.infobox-data-row');
+                for (var i = 0; i < rows.length; i++) {
+                    var label = rows[i].querySelector('.infobox-data-label');
+                    if (label && label.textContent.toLowerCase().includes('targeting input')) {
+                        var value = rows[i].querySelector('.infobox-data-value');
+                        if (value) {
+                            return value.textContent.trim();
+                        }
+                    }
+                }
+                return null;
+            """, details_container)
+            
+            return targeting_input if targeting_input else None
+                        
+        except Exception as e:
+            self.logger.debug(f"Could not extract targeting input: {e}")
+            return None
+
+    def _extract_damage_classification_js(self, driver, details_container) -> Optional[Dict[str, str]]:
+        """Extract damage classification (type and sub-types) from details container using JavaScript."""
+        try:
+            classification = driver.execute_script("""
+                var container = arguments[0];
+                if (!container) return null;
+                
+                var result = {};
+                var headers = container.querySelectorAll('.infobox-header');
+                
+                for (var i = 0; i < headers.length; i++) {
+                    if (headers[i].textContent.toLowerCase().includes('damage classification')) {
+                        var nextSection = headers[i].nextElementSibling;
+                        if (nextSection && nextSection.classList.contains('infobox-section-cell')) {
+                            var rows = nextSection.querySelectorAll('.infobox-data-row');
+                            for (var j = 0; j < rows.length; j++) {
+                                var label = rows[j].querySelector('.infobox-data-label');
+                                var value = rows[j].querySelector('.infobox-data-value');
+                                if (label && value) {
+                                    var labelText = label.textContent.toLowerCase().trim();
+                                    var valueText = value.textContent.trim();
+                                    
+                                    if (labelText.includes('type') && !labelText.includes('sub')) {
+                                        result.type = valueText;
+                                    } else if (labelText.includes('sub-type') || labelText.includes('subtype')) {
+                                        result.sub_type = valueText;
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+                
+                return Object.keys(result).length > 0 ? result : null;
+            """, details_container)
+            
+            return classification if classification else None
+                        
+        except Exception as e:
+            self.logger.debug(f"Could not extract damage classification: {e}")
+            return None
+
+    def _extract_counters_js(self, driver, details_container) -> Optional[Dict[str, str]]:
+        """Extract counters information from details container using JavaScript."""
+        try:
+            counters = driver.execute_script("""
+                var container = arguments[0];
+                if (!container) return null;
+                
+                var result = {};
+                var headers = container.querySelectorAll('.infobox-header');
+                
+                for (var i = 0; i < headers.length; i++) {
+                    if (headers[i].textContent.toLowerCase().includes('counters')) {
+                        var nextSection = headers[i].nextElementSibling;
+                        if (nextSection && nextSection.classList.contains('infobox-section-cell')) {
+                            var rows = nextSection.querySelectorAll('.infobox-data-row');
+                            for (var j = 0; j < rows.length; j++) {
+                                var label = rows[j].querySelector('.infobox-data-label');
+                                var value = rows[j].querySelector('.infobox-data-value');
+                                if (label && value) {
+                                    var labelText = label.textContent.toLowerCase().trim();
+                                    var valueText = value.textContent.trim();
+                                    result[labelText] = valueText;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+                
+                return Object.keys(result).length > 0 ? result : null;
+            """, details_container)
+            
+            return counters if counters else None
+                        
+        except Exception as e:
+            self.logger.debug(f"Could not extract counters: {e}")
+            return None
+
+    def _extract_additional_notes_js(self, driver, details_container) -> Optional[List[str]]:
+        """Extract additional notes/bullet points from details container using JavaScript."""
+        try:
+            notes = driver.execute_script("""
+                var container = arguments[0];
+                if (!container) return null;
+                
+                var result = [];
+                var lists = container.querySelectorAll('ul');
+                
+                for (var i = 0; i < lists.length; i++) {
+                    var listItems = lists[i].querySelectorAll('li');
+                    for (var j = 0; j < listItems.length; j++) {
+                        var text = listItems[j].textContent.trim();
+                        if (text && text.length > 10) {
+                            result.push(text);
+                        }
+                    }
+                }
+                
+                return result.length > 0 ? result : null;
+            """, details_container)
+            
+            return notes if notes else None
+                        
+        except Exception as e:
+            self.logger.debug(f"Could not extract additional notes: {e}")
+            return None
+
+    def _extract_additional_notes(self, details_container) -> Optional[List[str]]:
+        """Extract additional notes/bullet points from details container."""
+        notes = []
+        
+        try:
+            # Look for bullet lists or paragraphs with additional notes
+            note_elements = details_container.find_elements(By.CSS_SELECTOR, 'ul li, p')
+            
+            for element in note_elements:
+                text = element.text.strip()
+                if text and len(text) > 10:  # Filter out very short text
+                    notes.append(text)
+        except Exception as e:
+            self.logger.debug(f"Could not extract additional notes: {e}")
+            
+        return notes if notes else None
