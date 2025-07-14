@@ -44,204 +44,6 @@ Project Taric/Lol_Data_MCP_Server/
 }
 ```
 
-**📊 Available Champion Data**
-- **Taric** (Mock Data): Stats and abilities (Bravado, Starlight's Touch, Bastion, Dazzle, Cosmic Radiance).
-
----
-
-## 🗺️ Future Development Roadmap (Post-Maintenance)
-
-This section outlines the planned features and tasks to be implemented after the current maintenance and stabilization phase is complete.
-
-### Data Expansion Tools
-The following tools are planned to expand the server's data-providing capabilities.
-- **`get_item_data`**: *(Task 2.2.6)* Comprehensive item information including stats, recipes, patch history, and build paths.
-- **`search_items`**: *(Task 2.2.6)* Advanced item search with fuzzy matching and natural language queries.
-- **`get_meta_builds`**: Create a `MetaService` to provide data on popular champion builds, skill orders, and runes.
-
-### Data Source Integration & Enhancement
-These tasks focus on integrating real, live data from external sources to replace or supplement the current mock data.
-- **Task 2.1.2 - WikiScraper Page Parsing**: Enhance the `WikiScraper` to parse HTML from champion pages to extract live stats and ability details.
-- **Task 2.1.6 - Connect WikiScraper to ChampionService**: Integrate the enhanced scraper into the `ChampionService` to serve live data.
-- **Task 2.1.8 - Champion Discovery and Validation**: Use the `WikiScraper` to discover the full list of available champions and validate their existence.
-### **Task 2.2 - Item Data Integration & MCP Tools** *(PLANNED)*
-
-**Overview:** Implement comprehensive item data system with wiki scraping, fuzzy search capabilities, and MCP tools for item information retrieval.
-
-**Key Challenges:**
-- Items have unique URLs (no subclass pattern like champions): `wiki.leagueoflegends.com/en-us/[ItemName]`
-- No dedicated patch history URLs - must extract from individual item pages
-- Users may search imperfectly ("healing support item" vs "Moonstone Renewer")
-- Complex recipe trees with component relationships
-- Main items list: `https://wiki.leagueoflegends.com/en-us/Item`
-
-**📋 Sub-Tasks Breakdown:**
-
-#### **Task 2.2.1 - Item Discovery and List Scraping** *(2-3 hours)*
-
-**Objective:** Create foundation for item data by scraping the main items page and building item directory
-**File(s):** `src/data_sources/scrapers/item_list_scraper.py`
-
-**Instructions for AI:**
-1. Create `ItemListScraper` class in `src/data_sources/scrapers/`
-2. Scrape main items page: `https://wiki.leagueoflegends.com/en-us/Item`
-3. Extract all item names, URLs, and basic categories
-4. Build comprehensive item directory/index for fuzzy matching
-5. Handle item name normalization (spaces, apostrophes, special characters)
-6. Create item lookup table for URL building
-
-**Dependencies:** None
-**Deliverables:** Complete list of all LoL items with normalized names and URLs
-
-#### **Task 2.2.2 - Item Page Scraper Infrastructure** *(3-4 hours)*
-
-**Objective:** Create robust item page scraping system for individual item data extraction
-**File(s):** `src/data_sources/scrapers/item_scraper.py`
-
-**Instructions for AI:**
-1. Create `ItemScraper` class based on `base_scraper.py` pattern
-2. Handle individual item URL scraping with error handling
-3. Parse item infobox data (stats, passive abilities, limitations)
-4. Extract item description, flavor text, and keywords
-5. Handle different item types (legendary, mythic, boots, consumables)
-6. Parse availability information (game modes, restrictions)
-
-**Dependencies:** Task 2.2.1 (Item List)
-**Deliverables:** Structured item data extraction from individual pages
-
-#### **Task 2.2.3 - Item Recipe and Components System** *(2-3 hours)*
-
-**Objective:** Parse complex recipe trees and component relationships
-**File(s):** `src/data_sources/scrapers/item_recipe_scraper.py`
-
-**Instructions for AI:**
-1. Create `ItemRecipeScraper` class for recipe tree parsing
-2. Extract component items and build paths from recipe sections
-3. Parse gold costs (total, combine, component costs)
-4. Handle recipe tree hierarchy and item relationships
-5. Extract gold efficiency calculations when available
-6. Create item build path mapping system
-
-**Dependencies:** Task 2.2.2 (Item Scraper)
-**Deliverables:** Complete recipe and component relationship data
-
-#### **Task 2.2.4 - Item Patch History Extraction** *(2-3 hours)*
-
-**Objective:** Extract patch history from individual item pages (no dedicated URLs)
-**File(s):** `src/data_sources/scrapers/item_patch_scraper.py`
-
-**Instructions for AI:**
-1. Create `ItemPatchScraper` class for patch history extraction
-2. Parse "Patch History" sections from individual item pages
-3. Extract patch notes, buffs, nerfs, reworks, and item changes
-4. Handle version-specific stat changes and ability modifications
-5. Create chronological patch timeline for items
-6. Handle map-specific differences and balancing changes
-
-**Dependencies:** Task 2.2.2 (Item Scraper)
-**Deliverables:** Historical patch data for all items
-
-#### **Task 2.2.5 - Item Service Layer** *(2-3 hours)*
-
-**Objective:** Create service layer integrating all item scrapers with caching and data management
-**File(s):** `src/services/item_service.py`
-
-**Instructions for AI:**
-1. Create `ItemService` class in `src/services/`
-2. Integrate all item scrapers (list, data, recipe, patch)
-3. Implement intelligent caching strategies for item data
-4. Handle item data validation and consistency checks
-5. Create unified item data access methods
-6. Implement cache invalidation on patch updates
-
-**Dependencies:** Tasks 2.2.1-2.2.4 (All Scrapers)
-**Deliverables:** Unified item data service with caching
-
-#### **Task 2.2.6 - MCP Tools Implementation** *(3-4 hours)*
-
-**Objective:** Create user-facing MCP tools for item data access
-**File(s):** `src/mcp_server/tools.py`, `src/mcp_server/mcp_handler.py`
-
-**Instructions for AI:**
-1. **Tool 1 - `get_item_data`**: Get comprehensive item information by name/ID
-   - Input: item_name (string), include_recipe (bool), include_patch_history (bool)
-   - Output: Complete item data (stats, abilities, recipe, history)
-   - Handle fuzzy name matching with suggestions
-2. **Tool 2 - `search_items`**: Advanced item search with filters
-   - Input: query (string), item_type (optional), stats_filter (optional)
-   - Output: List of matching items with relevance scores
-   - Support natural language queries ("AP support items")
-3. Add tools to MCP handler registration
-4. Implement comprehensive error handling and user feedback
-
-**Dependencies:** Task 2.2.5 (Item Service), Task 2.2.7 (Search System)
-**Deliverables:** 2 fully functional MCP tools for item data
-
-#### **Task 2.2.7 - Item Search and Matching System** *(2-3 hours)*
-
-**Objective:** Implement fuzzy search for imperfect item names and natural language queries
-**File(s):** `src/services/item_search_service.py`
-
-**Instructions for AI:**
-1. Create `ItemSearchService` class for advanced search capabilities
-2. Implement fuzzy string matching for item names (Levenshtein distance)
-3. Handle partial matches and provide search suggestions
-4. Support search by item properties (AP items, support items, tank items)
-5. Create item categorization system (by role, stats, price range)
-6. Handle natural language queries ("items that heal allies")
-7. Implement search relevance scoring and ranking
-
-**Dependencies:** Task 2.2.1 (Item List), Task 2.2.5 (Item Service)
-**Deliverables:** Advanced search system with fuzzy matching
-
-#### **Task 2.2.8 - Item Data Models and Validation** *(1-2 hours)*
-
-**Objective:** Define proper data structures for item information
-**File(s):** `src/models/data_models.py`
-
-**Instructions for AI:**
-1. Create `ItemData` model with comprehensive item information
-2. Create `ItemRecipe` model for recipe tree representation
-3. Create `ItemStats` model for stat bonuses and scaling
-4. Define `ItemPatchNote` model for historical changes
-5. Handle different item types with appropriate schemas
-6. Implement data validation and consistency checks
-7. Add type hints and documentation for all models
-
-**Dependencies:** Task 2.2.2 (Item Scraper) - for understanding data structure
-**Deliverables:** Complete data models for item system
-
-#### **Task 2.2.9 - Testing and Integration** *(2-3 hours)*
-
-**Objective:** Ensure item system reliability and accuracy
-**File(s):** `tests/test_item_*.py`
-
-**Instructions for AI:**
-1. Write unit tests for all item scrapers and services
-2. Test MCP tools with various item queries and edge cases
-3. Validate scraped data accuracy against known wiki data
-4. Test fuzzy search functionality with common misspellings
-5. Test item recipe parsing with complex build paths
-6. Performance testing for large item datasets
-7. Integration testing with existing MCP server
-
-**Dependencies:** All previous tasks
-**Deliverables:** Comprehensive test suite for item system
-
----
-
-**📊 Task 2.2 Summary:**
-- **Total Estimated Time:** 18-25 hours across 9 sub-tasks
-- **Key Deliverables:** 2 MCP tools (`get_item_data`, `search_items`)
-- **Core Features:** Comprehensive item scraping, fuzzy search, recipe parsing, patch history
-- **Technical Challenges:** No URL patterns, complex recipes, natural language search
-
-**🎯 Priority Implementation Order:**
-1. 2.2.1 → 2.2.2 → 2.2.8 → 2.2.3 → 2.2.4 → 2.2.5 → 2.2.7 → 2.2.6 → 2.2.9
-- **Database Integration**: Implement a database (e.g., SQLite, Redis) to cache scraped data, reducing reliance on live requests and improving performance.
-
----
-
 ## I. Vision & Scope
 
 ### Problem Statement
@@ -1331,28 +1133,248 @@ get_champion_patch_note(champion_name="Taric", patch_version="V14.21")  # Specif
 
 ---
 
-### **Task 2.2: Items Data from LoL Wiki**
-**Objective:** Implement comprehensive item data extraction from LoL Wiki  
-**Files:** `src/data_sources/scrapers/items_scraper.py`, `src/services/items_service.py`, `src/mcp_server/tools.py`  
-**Status:** 🔄 **PENDING** - Item data extraction and MCP tool
+### **Task 2.2 - Item Data Integration & MCP Tools** *(PLANNED)*
 
-**Purpose:** 
-- **For lol_sim_env**: Accurate item stats and build paths for simulation rules
-- **For taric_ai_agent**: Item recommendation data for AI decision making  
-- **For general users**: Complete item database with cost efficiency
+**Overview:** Implement comprehensive item data system with wiki scraping, fuzzy search capabilities, and MCP tools for item information retrieval.
 
-**Core Implementation:**
-- ItemsScraper for item stats, build paths, and costs
-- ItemsService for data management and caching
-- GetItemDataTool MCP tool for item information retrieval
-- Item build paths and component relationships
-- Item categories and cost efficiency calculations
+**Key Challenges:**
+- Items have unique URLs (no subclass pattern like champions): `wiki.leagueoflegends.com/en-us/[ItemName]`
+- No dedicated patch history URLs - must extract from individual item pages
+- Users may search imperfectly ("healing support item" vs "Moonstone Renewer")
+- Complex recipe trees with component relationships
+- Main items list: `https://wiki.leagueoflegends.com/en-us/Item`
 
-**Expected Benefits:**
-- Complete item database with accurate stats
-- Build path analysis for progression understanding
-- Cost optimization for gold efficiency
-- Simulation support for accurate item data
+**📋 Sub-Tasks Breakdown:**
+
+#### **Task 2.2.1 - Item Discovery and List Scraping** 
+
+**Objective:** Create foundation for item data by scraping the main items page and building comprehensive item directory for search and identification
+**File(s):** `src/data_sources/scrapers/item_list_scraper.py`
+
+**Instructions for AI:**
+1. Create `ItemListScraper` class to scrape: `https://wiki.leagueoflegends.com/en-us/Item`
+2. **Extract categorized item lists from "List of Items" section:**
+   - Starter items, Basic items, Epic items, Legendary items
+   - Boots, Consumables, Trinkets, Distributed items
+   - Champion exclusive items, Arena items, etc.
+3. **Build searchable item index with categories:**
+   - Item name → Category mapping (e.g., "Echoes of Helia" → "Legendary")
+   - Category → Items mapping (e.g., "Support" → [list of support items])
+   - Create normalized search terms for each item
+4. **Generate item URLs** for individual page scraping: `/en-us/[ItemName]`
+5. **Extract any item descriptions/previews** available on main page
+6. **Create fuzzy search database** with item names, aliases, and categories
+
+**Dependencies:** None
+**Deliverables:** 
+- Complete categorized item directory
+- Search index for item identification 
+- URL mapping for detailed data retrieval
+
+#### **Task 2.2.2 - Item Page Scraper Infrastructure** 
+
+**Objective:** Create robust item page scraping system for individual item data extraction
+**File(s):** `src/data_sources/scrapers/item_scraper.py`
+
+**Instructions for AI:**
+1. Create `ItemScraper` class based on `base_scraper.py` pattern
+2. Handle individual item URL scraping with error handling
+3. Parse item infobox data (stats, passive abilities, limitations)
+4. Extract item description, flavor text, and keywords
+5. Handle different item types (legendary, mythic, boots, consumables)
+6. Parse availability information (game modes, restrictions)
+
+**Dependencies:** Task 2.2.1 (Item List)
+**Deliverables:** Structured item data extraction from individual pages
+
+#### **Task 2.2.3 - Item Recipe and Components System** 
+
+**Objective:** Parse complex recipe trees and component relationships
+**File(s):** `src/data_sources/scrapers/item_recipe_scraper.py`
+
+**Instructions for AI:**
+1. Create `ItemRecipeScraper` class for recipe tree parsing
+2. Extract component items and build paths from recipe sections
+3. Parse gold costs (total, combine, component costs)
+4. Handle recipe tree hierarchy and item relationships
+5. Extract gold efficiency calculations when available
+6. Create item build path mapping system
+
+**Dependencies:** Task 2.2.2 (Item Scraper)
+**Deliverables:** Complete recipe and component relationship data
+
+#### **Task 2.2.4 - Item Patch History Extraction** 
+
+**Objective:** Extract patch history from individual item pages (no dedicated URLs)
+**File(s):** `src/data_sources/scrapers/item_patch_scraper.py`
+
+**Instructions for AI:**
+1. Create `ItemPatchScraper` class for patch history extraction
+2. Parse "Patch History" sections from individual item pages
+3. Extract patch notes, buffs, nerfs, reworks, and item changes
+4. Handle version-specific stat changes and ability modifications
+5. Create chronological patch timeline for items
+6. Handle map-specific differences and balancing changes
+
+**Dependencies:** Task 2.2.2 (Item Scraper)
+**Deliverables:** Historical patch data for all items
+
+#### **Task 2.2.5 - Item Service Layer** 
+
+**Objective:** Create service layer integrating all item scrapers with caching and data management
+**File(s):** `src/services/item_service.py`
+
+**Instructions for AI:**
+1. Create `ItemService` class in `src/services/`
+2. Integrate all item scrapers (list, data, recipe, patch)
+3. Implement intelligent caching strategies for item data
+4. Handle item data validation and consistency checks
+5. Create unified item data access methods
+6. Implement cache invalidation on patch updates
+
+**Dependencies:** Tasks 2.2.1-2.2.4 (All Scrapers)
+**Deliverables:** Unified item data service with caching
+
+#### **Task 2.2.6 - MCP Tools Implementation** 
+
+**Objective:** Create user-facing MCP tools implementing two-stage item discovery and data retrieval
+**File(s):** `src/mcp_server/tools.py`, `src/mcp_server/mcp_handler.py`
+
+**Instructions for AI:**
+1. **Tool 1 - `get_item_data`**: Get comprehensive item information using two-stage approach
+   ```python
+   # Stage 1: Identify item from main Item page index
+   # Stage 2: Fetch detailed data from individual item page
+   
+   Input: item_name (string), include_recipe (bool), include_patch_history (bool)
+   
+   Process:
+   1. Search main Item page directory for item identification
+   2. If found: scrape individual page for complete data
+   3. If ambiguous: provide suggestions from main page categories
+   
+   Output: Complete item data (stats, abilities, recipe, history) from wiki
+   ```
+
+2. **Tool 2 - `search_items`**: Natural language search using main Item page structure
+   ```python
+   # User: "item that heals ally and damages enemy"
+   
+   Process:
+   1. Query main Item page categories (Support, Legendary, etc.)
+   2. Use LLM with item lists from main page for initial matching
+   3. If needed: fetch detailed data from individual pages for verification
+   4. Return ranked results with category context
+   
+   Input: query (string), category_filter (optional), max_results (optional)
+   Output: Ranked item matches with explanations and wiki sources
+   ```
+
+3. **Implement two-stage search flow:**
+   - Fast category-based filtering from main Item page
+   - Detailed analysis only when needed (for ambiguous queries)
+   - Always provide source links to individual wiki pages
+
+4. Add tools to MCP handler registration with comprehensive error handling
+
+**Dependencies:** Task 2.2.5 (Item Service), Task 2.2.7 (Search System)
+**Deliverables:** 2 MCP tools implementing efficient two-stage item discovery
+
+#### **Task 2.2.7 - Item Search and Matching System** 
+
+**Objective:** Implement two-stage item identification: search main Item page data first, then fetch detailed data
+**File(s):** `src/services/item_search_service.py`
+
+**Instructions for AI:**
+1. **Create `ItemSearchService` using main Item page data as primary search index:**
+   - Load categorized item directory from Task 2.2.1
+   - Build search index from item names, categories, and any descriptions from main page
+   - Create fuzzy string matching for item names (Levenshtein distance)
+
+2. **Stage 1 - Item Identification from Main Page:**
+   ```python
+   # User: "item that heals ally and damages enemy"
+   # Search in main page categories: Support items, Legendary items, etc.
+   # Use basic item info + categories to narrow down candidates
+   # Return: ["Echoes of Helia", "Imperial Mandate"] as potential matches
+   ```
+
+3. **Stage 2 - Detailed Analysis (if needed):**
+   ```python
+   # For ambiguous queries, fetch detailed data from individual pages
+   # Analyze passive abilities from scraped individual item pages
+   # Return refined matches with detailed explanations
+   ```
+
+4. **Implement search strategies:**
+   - **Direct name matching**: "Echoes of Helia" → exact match
+   - **Category filtering**: "legendary support items" → filter by category
+   - **Natural language**: Use LLM with main page item lists + categories
+   - **Fuzzy matching**: "ekos helia" → "Echoes of Helia"
+
+5. **Relevance scoring system** combining category match, name similarity, and context
+
+**Dependencies:** Task 2.2.1 (Item List), Task 2.2.5 (Item Service)
+**Deliverables:** Two-stage search system leveraging main Item page structure
+
+#### **Task 2.2.8 - Item Data Models and Validation** 
+
+**Objective:** Define proper data structures for item information
+**File(s):** `src/models/data_models.py`
+
+**Instructions for AI:**
+1. Create `ItemData` model with comprehensive item information
+2. Create `ItemRecipe` model for recipe tree representation
+3. Create `ItemStats` model for stat bonuses and scaling
+4. Define `ItemPatchNote` model for historical changes
+5. Handle different item types with appropriate schemas
+6. Implement data validation and consistency checks
+7. Add type hints and documentation for all models
+
+**Dependencies:** Task 2.2.2 (Item Scraper) - for understanding data structure
+**Deliverables:** Complete data models for item system
+
+#### **Task 2.2.9 - Testing and Integration** 
+
+**Objective:** Ensure item system reliability and accuracy
+**File(s):** `tests/test_item_*.py`
+
+**Instructions for AI:**
+1. Write unit tests for all item scrapers and services
+2. Test MCP tools with various item queries and edge cases
+3. Validate scraped data accuracy against known wiki data
+4. Test fuzzy search functionality with common misspellings
+5. Test item recipe parsing with complex build paths
+6. Performance testing for large item datasets
+7. Integration testing with existing MCP server
+
+**Dependencies:** All previous tasks
+**Deliverables:** Comprehensive test suite for item system
+
+---
+
+**📊 Task 2.2 Summary:**
+- **Total Estimated Time:** 18-25 hours across 9 sub-tasks
+- **Key Deliverables:** 2 MCP tools (`get_item_data`, `search_items`)
+- **Core Features:** Two-stage item discovery, comprehensive wiki scraping, natural language search
+- **Technical Approach:** 
+  - **Stage 1**: Fast search using main Item page categories and lists
+  - **Stage 2**: Detailed data from individual item wiki pages
+- **Benefits:** Efficient search, official wiki categories, complete item coverage
+
+**🎯 Priority Implementation Order:**
+1. 2.2.1 → 2.2.2 → 2.2.8 → 2.2.3 → 2.2.4 → 2.2.5 → 2.2.7 → 2.2.6 → 2.2.9
+
+**🔄 Two-Stage Flow Example:**
+```
+User: "item that heals ally and damages enemy"
+├── Stage 1: Search main Item page → Categories: [Support, Legendary]
+├── Filter: Support + Legendary items → Candidates: [Echoes of Helia, Imperial Mandate]  
+├── Stage 2: Analyze individual pages for healing+damage effects
+└── Result: Echoes of Helia (95% match) with complete wiki data
+```
+
+---
 
 ### **Task 2.3: Runes Data from LoL Wiki**
 **Objective:** Implement rune system data extraction from LoL Wiki  
@@ -1589,88 +1611,3 @@ Each task is designed to be completable in 2-4 hours of focused development time
 The enhanced system now provides comprehensive LoL data access, sophisticated gameplay analysis, **ready-to-train imitation learning datasets**, and AI training capabilities that can support everything from individual player improvement to cutting-edge reinforcement learning research.
 
 ---
-
-## Phase 11: Codebase Quality & Maintenance (COMPLETED ✅)
-
-### ✅ **Task 11.1: Implement RECOMMENDATIONS.md Improvements** *(COMPLETED)*
-
-**Objective:** Implement codebase quality improvements identified through comprehensive analysis  
-**Files:** Multiple files across src/ directory  
-**Status:** ✅ **COMPLETED** - 11 out of 12 improvements implemented (December 2024)
-
-**Analysis Source:** Detailed codebase analysis documented in `docs/RECOMMENDATIONS.md` identified 12 areas for improvement across code quality, redundancy elimination, error handling, and architectural optimization.
-
-**✅ Implementation Results:**
-
-#### **Low Risk Improvements (5/5 COMPLETED)**
-1. **✅ src/utils/config_utils.py** - **CREATED**: Moved utility functions (`create_config_template`, `default_settings`) from `src/core/config.py` to dedicated utils module with proper Environment enum
-2. **✅ src/core/config.py** - **UPDATED**: Replaced 5 `print()` statements with proper `logging.warning()` and `logging.error()` calls for consistent log handling
-3. **✅ src/core/config.py** - **CLEANED**: Removed redundant `config_dir` check in `load_config_files` since Pydantic's `default_factory` guarantees value
-4. **✅ src/core/environment_loader.py** - **CLEANED**: Removed duplicate `_deep_merge_dicts()` function (identical to `_deep_merge` in config.py)
-5. **✅ src/core/environment_loader.py** - **CLEANED**: Removed unused `load_config_with_env()` function that duplicated Settings class functionality
-
-#### **Medium Risk Improvements (6/6 COMPLETED)**
-6. **✅ src/mcp_server/server.py** - **SIMPLIFIED**: Removed custom signal handlers (`_setup_signal_handlers`) to let Uvicorn handle SIGINT/SIGTERM gracefully through lifespan
-7. **✅ src/mcp_server/stdio_server.py** - **REFACTORED**: Fixed import paths by removing brittle `sys.path` manipulations and try/except import blocks, simplified to direct imports
-8. **✅ src/services/champion_service.py** - **OPTIMIZED**: Removed redundant `if include is None` check since Pydantic model provides `default=["stats", "abilities"]`
-9. **✅ src/mcp_server/tools.py** - **ENHANCED**: Implemented dependency injection for ChampionService:
-   - Modified all tool classes to accept `champion_service` parameter in `__init__`
-   - Updated `ToolRegistry._register_default_tools` to create single ChampionService instance and inject it
-   - Removed all `_get_champion_service()` methods that created new instances per call
-   - Added proper error handling for missing service injection
-10. **✅ src/data_sources/scrapers/wiki_scraper.py** - **FIXED**: Consolidated metric updates to prevent double-counting:
-    - Modified `_update_metrics` to only handle request metrics, not parsing metrics
-    - Fixed indentation error that caused syntax issues
-    - Parsing success/failure metrics now only tracked by actual parsing methods
-11. **✅ src/utils/__init__.py** - **UPDATED**: Added imports for new config_utils functions
-
-#### **High Risk Improvements (0/1 COMPLETED)**
-12. **🔄 src/mcp_server/mcp_handler.py** - **NOT IMPLEMENTED**: Tool management unification under ToolRegistry
-   - **Decision**: High-risk architectural change deferred to maintain system stability
-   - **Current Status**: Basic tools (`ping`, `server_info`) remain in separate `basic_tools` dictionary
-   - **Future Consideration**: Could be implemented in dedicated refactoring session with comprehensive testing
-
-**📁 Files Modified:**
-- ✅ **NEW**: `src/utils/config_utils.py` (moved utility functions with proper imports)
-- ✅ **UPDATED**: `src/core/config.py` (logging improvements, cleanup)
-- ✅ **UPDATED**: `src/core/environment_loader.py` (removed duplicates and unused functions)
-- ✅ **UPDATED**: `src/mcp_server/server.py` (simplified signal handling)
-- ✅ **UPDATED**: `src/mcp_server/stdio_server.py` (fixed import paths)
-- ✅ **UPDATED**: `src/services/champion_service.py` (removed redundant checks)
-- ✅ **UPDATED**: `src/mcp_server/tools.py` (dependency injection for ChampionService)
-- ✅ **UPDATED**: `src/data_sources/scrapers/wiki_scraper.py` (consolidated metrics)
-- ✅ **UPDATED**: `src/utils/__init__.py` (added config_utils imports)
-
-**🔧 Key Achievements:**
-- **Code Quality**: Eliminated redundant code patterns across 9 files
-- **Logging Consistency**: Replaced print statements with proper logging throughout
-- **Dependency Injection**: Improved ChampionService initialization pattern in MCP tools
-- **Import Cleanup**: Simplified and fixed brittle import handling
-- **Metric Accuracy**: Fixed double-counting issues in WikiScraper metrics
-- **Maintainability**: Moved utility functions to appropriate modules for better organization
-- **Zero Regressions**: All improvements implemented without breaking existing functionality
-
-**⚠️ Implementation Notes:**
-- All changes maintain backward compatibility
-- Original functionality preserved in all modified files
-- Comprehensive testing verified no regressions in core MCP functionality
-- One high-risk improvement deferred to maintain system stability
-
-**✅ Verification Complete:**
-- All basic imports working: Settings, ToolRegistry, ChampionService
-- ChampionService initialization with dependency injection successful
-- WikiScraper imports successfully after metric consolidation fix
-- MCP server tools continue to function as expected
-- No breaking changes to existing API contracts
-
----
-
-## Phase 12: Bug Fixes & Cleanup Tasks
-
-### Task 12.1: Future Bug Fixes and Cleanup
-**Objective:** Reserved for future bug fixes and cleanup tasks  
-**Status:** 🔄 **PENDING** - No current tasks assigned
-
-**Note:** This section is reserved for future bug fixes and cleanup tasks that may arise during development.
-
-
