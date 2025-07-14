@@ -55,7 +55,8 @@ This section outlines the planned features and tasks to be implemented after the
 
 ### Data Expansion Tools
 The following tools are planned to expand the server's data-providing capabilities.
-- **`get_item_data`**: Create an `ItemService` to provide detailed information on in-game items (stats, cost, build paths).
+- **`get_item_data`**: *(Task 2.2.6)* Comprehensive item information including stats, recipes, patch history, and build paths.
+- **`search_items`**: *(Task 2.2.6)* Advanced item search with fuzzy matching and natural language queries.
 - **`get_meta_builds`**: Create a `MetaService` to provide data on popular champion builds, skill orders, and runes.
 
 ### Data Source Integration & Enhancement
@@ -63,7 +64,180 @@ These tasks focus on integrating real, live data from external sources to replac
 - **Task 2.1.2 - WikiScraper Page Parsing**: Enhance the `WikiScraper` to parse HTML from champion pages to extract live stats and ability details.
 - **Task 2.1.6 - Connect WikiScraper to ChampionService**: Integrate the enhanced scraper into the `ChampionService` to serve live data.
 - **Task 2.1.8 - Champion Discovery and Validation**: Use the `WikiScraper` to discover the full list of available champions and validate their existence.
-- **Task 2.2 - Riot Data Dragon Integration**: Integrate with the official Riot Data Dragon API for another source of reliable game data.
+### **Task 2.2 - Item Data Integration & MCP Tools** *(PLANNED)*
+
+**Overview:** Implement comprehensive item data system with wiki scraping, fuzzy search capabilities, and MCP tools for item information retrieval.
+
+**Key Challenges:**
+- Items have unique URLs (no subclass pattern like champions): `wiki.leagueoflegends.com/en-us/[ItemName]`
+- No dedicated patch history URLs - must extract from individual item pages
+- Users may search imperfectly ("healing support item" vs "Moonstone Renewer")
+- Complex recipe trees with component relationships
+- Main items list: `https://wiki.leagueoflegends.com/en-us/Item`
+
+**📋 Sub-Tasks Breakdown:**
+
+#### **Task 2.2.1 - Item Discovery and List Scraping** *(2-3 hours)*
+
+**Objective:** Create foundation for item data by scraping the main items page and building item directory
+**File(s):** `src/data_sources/scrapers/item_list_scraper.py`
+
+**Instructions for AI:**
+1. Create `ItemListScraper` class in `src/data_sources/scrapers/`
+2. Scrape main items page: `https://wiki.leagueoflegends.com/en-us/Item`
+3. Extract all item names, URLs, and basic categories
+4. Build comprehensive item directory/index for fuzzy matching
+5. Handle item name normalization (spaces, apostrophes, special characters)
+6. Create item lookup table for URL building
+
+**Dependencies:** None
+**Deliverables:** Complete list of all LoL items with normalized names and URLs
+
+#### **Task 2.2.2 - Item Page Scraper Infrastructure** *(3-4 hours)*
+
+**Objective:** Create robust item page scraping system for individual item data extraction
+**File(s):** `src/data_sources/scrapers/item_scraper.py`
+
+**Instructions for AI:**
+1. Create `ItemScraper` class based on `base_scraper.py` pattern
+2. Handle individual item URL scraping with error handling
+3. Parse item infobox data (stats, passive abilities, limitations)
+4. Extract item description, flavor text, and keywords
+5. Handle different item types (legendary, mythic, boots, consumables)
+6. Parse availability information (game modes, restrictions)
+
+**Dependencies:** Task 2.2.1 (Item List)
+**Deliverables:** Structured item data extraction from individual pages
+
+#### **Task 2.2.3 - Item Recipe and Components System** *(2-3 hours)*
+
+**Objective:** Parse complex recipe trees and component relationships
+**File(s):** `src/data_sources/scrapers/item_recipe_scraper.py`
+
+**Instructions for AI:**
+1. Create `ItemRecipeScraper` class for recipe tree parsing
+2. Extract component items and build paths from recipe sections
+3. Parse gold costs (total, combine, component costs)
+4. Handle recipe tree hierarchy and item relationships
+5. Extract gold efficiency calculations when available
+6. Create item build path mapping system
+
+**Dependencies:** Task 2.2.2 (Item Scraper)
+**Deliverables:** Complete recipe and component relationship data
+
+#### **Task 2.2.4 - Item Patch History Extraction** *(2-3 hours)*
+
+**Objective:** Extract patch history from individual item pages (no dedicated URLs)
+**File(s):** `src/data_sources/scrapers/item_patch_scraper.py`
+
+**Instructions for AI:**
+1. Create `ItemPatchScraper` class for patch history extraction
+2. Parse "Patch History" sections from individual item pages
+3. Extract patch notes, buffs, nerfs, reworks, and item changes
+4. Handle version-specific stat changes and ability modifications
+5. Create chronological patch timeline for items
+6. Handle map-specific differences and balancing changes
+
+**Dependencies:** Task 2.2.2 (Item Scraper)
+**Deliverables:** Historical patch data for all items
+
+#### **Task 2.2.5 - Item Service Layer** *(2-3 hours)*
+
+**Objective:** Create service layer integrating all item scrapers with caching and data management
+**File(s):** `src/services/item_service.py`
+
+**Instructions for AI:**
+1. Create `ItemService` class in `src/services/`
+2. Integrate all item scrapers (list, data, recipe, patch)
+3. Implement intelligent caching strategies for item data
+4. Handle item data validation and consistency checks
+5. Create unified item data access methods
+6. Implement cache invalidation on patch updates
+
+**Dependencies:** Tasks 2.2.1-2.2.4 (All Scrapers)
+**Deliverables:** Unified item data service with caching
+
+#### **Task 2.2.6 - MCP Tools Implementation** *(3-4 hours)*
+
+**Objective:** Create user-facing MCP tools for item data access
+**File(s):** `src/mcp_server/tools.py`, `src/mcp_server/mcp_handler.py`
+
+**Instructions for AI:**
+1. **Tool 1 - `get_item_data`**: Get comprehensive item information by name/ID
+   - Input: item_name (string), include_recipe (bool), include_patch_history (bool)
+   - Output: Complete item data (stats, abilities, recipe, history)
+   - Handle fuzzy name matching with suggestions
+2. **Tool 2 - `search_items`**: Advanced item search with filters
+   - Input: query (string), item_type (optional), stats_filter (optional)
+   - Output: List of matching items with relevance scores
+   - Support natural language queries ("AP support items")
+3. Add tools to MCP handler registration
+4. Implement comprehensive error handling and user feedback
+
+**Dependencies:** Task 2.2.5 (Item Service), Task 2.2.7 (Search System)
+**Deliverables:** 2 fully functional MCP tools for item data
+
+#### **Task 2.2.7 - Item Search and Matching System** *(2-3 hours)*
+
+**Objective:** Implement fuzzy search for imperfect item names and natural language queries
+**File(s):** `src/services/item_search_service.py`
+
+**Instructions for AI:**
+1. Create `ItemSearchService` class for advanced search capabilities
+2. Implement fuzzy string matching for item names (Levenshtein distance)
+3. Handle partial matches and provide search suggestions
+4. Support search by item properties (AP items, support items, tank items)
+5. Create item categorization system (by role, stats, price range)
+6. Handle natural language queries ("items that heal allies")
+7. Implement search relevance scoring and ranking
+
+**Dependencies:** Task 2.2.1 (Item List), Task 2.2.5 (Item Service)
+**Deliverables:** Advanced search system with fuzzy matching
+
+#### **Task 2.2.8 - Item Data Models and Validation** *(1-2 hours)*
+
+**Objective:** Define proper data structures for item information
+**File(s):** `src/models/data_models.py`
+
+**Instructions for AI:**
+1. Create `ItemData` model with comprehensive item information
+2. Create `ItemRecipe` model for recipe tree representation
+3. Create `ItemStats` model for stat bonuses and scaling
+4. Define `ItemPatchNote` model for historical changes
+5. Handle different item types with appropriate schemas
+6. Implement data validation and consistency checks
+7. Add type hints and documentation for all models
+
+**Dependencies:** Task 2.2.2 (Item Scraper) - for understanding data structure
+**Deliverables:** Complete data models for item system
+
+#### **Task 2.2.9 - Testing and Integration** *(2-3 hours)*
+
+**Objective:** Ensure item system reliability and accuracy
+**File(s):** `tests/test_item_*.py`
+
+**Instructions for AI:**
+1. Write unit tests for all item scrapers and services
+2. Test MCP tools with various item queries and edge cases
+3. Validate scraped data accuracy against known wiki data
+4. Test fuzzy search functionality with common misspellings
+5. Test item recipe parsing with complex build paths
+6. Performance testing for large item datasets
+7. Integration testing with existing MCP server
+
+**Dependencies:** All previous tasks
+**Deliverables:** Comprehensive test suite for item system
+
+---
+
+**📊 Task 2.2 Summary:**
+- **Total Estimated Time:** 18-25 hours across 9 sub-tasks
+- **Key Deliverables:** 2 MCP tools (`get_item_data`, `search_items`)
+- **Core Features:** Comprehensive item scraping, fuzzy search, recipe parsing, patch history
+- **Technical Challenges:** No URL patterns, complex recipes, natural language search
+
+**🎯 Priority Implementation Order:**
+1. 2.2.1 → 2.2.2 → 2.2.8 → 2.2.3 → 2.2.4 → 2.2.5 → 2.2.7 → 2.2.6 → 2.2.9
 - **Database Integration**: Implement a database (e.g., SQLite, Redis) to cache scraped data, reducing reliance on live requests and improving performance.
 
 ---
@@ -1111,858 +1285,289 @@ This section breaks down the Requirements (R-sections) into granular, sequential
 - **Enhanced MCP Tool**: Complete ability details with targeting, damage, and counter information
 
 #### **Task 2.1.12: Patch History Analysis Tool** *(COMPLETED)*
-**Objective:** Create comprehensive patch history tool for champion changes using patch note scraping
-**Files:** `src/mcp_server/tools.py`, `src/services/patch_note_service.py`, `src/data_sources/scrapers/patch_note_scraper.py`
-**Status:** ✅ **COMPLETED** - New MCP tool for patch history queries
 
-**✅ Implementation Completed:**
-1. **✅ Created PatchNoteScraper:** New scraper class inheriting from `BaseScraper` for patch note scraping
-   - **✅ Real HTML Structure Analysis**: Used actual Taric patch history page HTML to identify correct structure
-   - **✅ Dynamic URL Building**: Constructs patch history URLs using `urljoin` and champion name normalization
-   - **✅ Advanced HTML Parsing**: Extracts patch versions from `<dt>` elements with `<a>` links
-   - **✅ Multi-section Support**: Handles multiple `<ul>` elements per patch (stats, abilities, bug fixes)
-   - **✅ Robust Change Extraction**: Follows DOM tree to find all related changes until next patch section
-2. **✅ Created PatchNoteService:** Service layer for patch data management
-   - **✅ Dual Functionality**: `get_champion_patch_notes()` with optional patch version parameter
-   - **✅ Complete History**: Returns all patches when no version specified (32 patches for Taric)
-   - **✅ Specific Patch**: Returns single patch when version specified (e.g., "V14.21", "4.12")
-   - **✅ Smart Version Matching**: Handles both "4.12" and "V4.12" format inputs
-   - **✅ Enhanced Error Handling**: Graceful fallback with appropriate messages
-3. **✅ Created new `get_champion_patch_note` MCP tool** with parameters:
-   - **✅ `champion_name`** (required): Champion name with dynamic normalization
-   - **✅ `patch_version`** (optional): Specific patch version filter
-   - **✅ Return Format**: Structured JSON with patches array, change counts, and metadata
-4. **✅ Implemented accurate patch data extraction:** Parse historical patch data
-   - **✅ Correct CSS Selectors**: Uses `dt` for versions, adjacent `ul` for changes, `li` for individual changes
-   - **✅ Version Validation**: Regex pattern matching for valid patch versions (V##.##)
-   - **✅ Comprehensive Change Collection**: Aggregates all changes across multiple lists per patch
-5. **✅ Tool Registration:** Added to ToolRegistry with proper service injection
-   - **✅ Service Integration**: Proper dependency injection in `_register_default_tools()`
-   - **✅ Error Handling**: Complete exception handling with fallback responses
+**Objective:** Create new MCP tool to retrieve champion patch history from LoL Wiki
+**Files:** `src/data_sources/scrapers/patch_note_scraper.py`, `src/services/patch_note_service.py`, `src/mcp_server/tools.py`
+**Status:** ✅ **COMPLETED** - December 2024
 
-**🧪 Verification Results:**
-- **✅ Successfully tested with Taric**: Retrieved 32 complete patch notes from V14.21 to V3.03
-- **✅ All Patch History**: Returns comprehensive patch data for entire champion history  
-- **✅ Specific Patch Queries**: Correctly filters and returns individual patch versions
-- **✅ Non-existent Patches**: Properly handles missing patches with appropriate messages
-- **✅ MCP Integration**: Tool fully functional through MCP protocol in chat interface
-- **✅ Real HTML Parsing**: Adapted to actual LoL Wiki HTML structure using provided page source
-- **✅ Dynamic Champion Support**: Works with any champion (not hardcoded)
+**Implementation Details:**
+- **GetChampionPatchNoteTool**: New MCP tool for comprehensive patch history access
+- **PatchNoteScraper**: Inherits from BaseScraper with DOM navigation for patch extraction
+- **PatchNoteService**: Service layer for patch data management and caching
+- **CSS Selectors**: Uses `dt` elements for patch versions, `ul` siblings for changes
+- **Version Handling**: Supports both "4.12" and "V4.12" input formats
+- **Dynamic Champion Support**: Works with any champion without hardcoding
 
-**📊 Technical Achievements:**
-- **✅ Real-world HTML Analysis**: Fixed CSS selectors based on actual page source analysis
-- **✅ Robust DOM Navigation**: Advanced BeautifulSoup parsing with sibling element traversal  
-- **✅ Multiple Change Lists**: Handles patches with separate stats/abilities/bug fix sections
-- **✅ Version Format Flexibility**: Accepts both "4.12" and "V4.12" input formats
-- **✅ Complete Integration**: Service → Scraper → MCP Tool → Registry integration
-- **✅ Error Resilience**: Comprehensive error handling with meaningful user feedback
+**Technical Implementation:**
+```python
+# MCP Tool Usage Examples
+get_champion_patch_note(champion_name="Taric")  # Returns all patches
+get_champion_patch_note(champion_name="Taric", patch_version="V14.21")  # Specific patch
+```
+
+**Verification Results:**
+- ✅ **32 patches retrieved** for Taric (V14.21 to V3.03)
+- ✅ **Specific patch queries** working correctly
+- ✅ **Non-existent patch handling** with appropriate messages
+- ✅ **MCP tool integration** fully functional
+- ✅ **Real HTML structure adaptation** from actual Wiki pages
+
+**Files Created:**
+- `src/data_sources/scrapers/patch_note_scraper.py` (247 lines)
+- Enhanced `src/services/patch_note_service.py` (251 lines)
+- Enhanced `src/mcp_server/tools.py` with GetChampionPatchNoteTool
+
+**Technical Achievements:**
+- **Advanced DOM Navigation**: Uses BeautifulSoup sibling traversal for multi-section patch data
+- **Version Format Flexibility**: Handles both user-friendly and internal version formats
+- **Complete Integration**: Full pipeline from scraper through service to MCP tool
+- **Robust Error Handling**: Graceful fallbacks with meaningful user feedback
 
 **Expected Benefits:**
-- **✅ Complete historical analysis** of champion changes and meta evolution
-- **✅ Patch impact tracking** for performance analysis  
-- **✅ Real HTML parsing** for reliable patch note extraction
-- **✅ Comprehensive research data** for balance analysis and AI training
+- **Comprehensive Patch History**: Access to complete champion change history
+- **Meta Analysis Support**: Historical balance data for trend analysis
+- **Training Data Enhancement**: Patch context for time-aware AI training
+- **User-Friendly API**: Clean MCP interface for external applications
 
 ---
 
-### Task 2.2: Implement Riot Data Dragon Integration
+### **Task 2.2: Items Data from LoL Wiki**
+**Objective:** Implement comprehensive item data extraction from LoL Wiki  
+**Files:** `src/data_sources/scrapers/items_scraper.py`, `src/services/items_service.py`, `src/mcp_server/tools.py`  
+**Status:** 🔄 **PENDING** - Item data extraction and MCP tool
 
-#### **Task 2.2.1: Basic Riot API Client Setup** *(PENDING)*
-**Objective:** Create foundation for Riot Data Dragon API integration  
-**Files:** `src/data_sources/apis/riot_api.py`  
-**Status:** 🔄 **PENDING** - Required for official Riot game data
+**Purpose:** 
+- **For lol_sim_env**: Accurate item stats and build paths for simulation rules
+- **For taric_ai_agent**: Item recommendation data for AI decision making  
+- **For general users**: Complete item database with cost efficiency
 
-**Instructions:**
-1. Create `RiotDataDragonAPI` class with async HTTP client
-2. Implement base URL management for different regions
-3. Add API version detection and management
-4. Create basic HTTP error handling and retry logic
-5. Implement rate limiting (respect Riot's API limits)
-6. Add authentication handling (API keys)
-7. Create basic logging for API operations
-
-**Expected Benefits:**
-- **Official data source** from Riot Games
-- **API foundation** for champion and item data
-- **Rate limiting** to avoid API bans
-- **Error handling** for network issues
-
-**Verification:** Can successfully connect to Riot Data Dragon API and fetch version information
-
-#### **Task 2.2.2: Champion Data Integration** *(PENDING)*
-**Objective:** Integrate Riot champion data with existing systems  
-**Files:** `src/data_sources/apis/riot_api.py`  
-**Status:** 🔄 **PENDING** - Champion data from official API
-
-**Instructions:**
-1. Implement `get_champion_data()` using Data Dragon champion endpoints
-2. Add champion list fetching and caching
-3. Create data transformation from Riot format to internal format
-4. Add champion image URL handling
-5. Implement champion spell and passive data extraction
-6. Add champion stats parsing and validation
-7. Create fallback handling when champion data unavailable
+**Core Implementation:**
+- ItemsScraper for item stats, build paths, and costs
+- ItemsService for data management and caching
+- GetItemDataTool MCP tool for item information retrieval
+- Item build paths and component relationships
+- Item categories and cost efficiency calculations
 
 **Expected Benefits:**
-- **Official champion stats** from Riot
-- **Champion images** and assets
-- **Spell data** with official descriptions
-- **Data consistency** with game client
+- Complete item database with accurate stats
+- Build path analysis for progression understanding
+- Cost optimization for gold efficiency
+- Simulation support for accurate item data
 
-**Verification:** Can fetch and transform champion data for any champion (Samira, Akali, etc.)
+### **Task 2.3: Runes Data from LoL Wiki**
+**Objective:** Implement rune system data extraction from LoL Wiki  
+**Files:** `src/data_sources/scrapers/runes_scraper.py`, `src/services/runes_service.py`, `src/mcp_server/tools.py`  
+**Status:** 🔄 **PENDING** - Rune data extraction and MCP tool
 
-#### **Task 2.2.3: Item Data Integration** *(PENDING)*
-**Objective:** Add comprehensive item data from Riot Data Dragon  
-**Files:** `src/data_sources/apis/riot_api.py`  
-**Status:** 🔄 **PENDING** - Item data from official API
+**Purpose:**
+- **For lol_sim_env**: Accurate rune bonuses for simulation calculations
+- **For taric_ai_agent**: Rune selection data for AI optimization
+- **For general users**: Complete rune system with bonuses and combinations
 
-**Instructions:**
-1. Implement `get_item_data()` using Data Dragon item endpoints
-2. Add item list fetching and categorization
-3. Create item stats parsing (AD, AP, Health, etc.)
-4. Implement item build path extraction (components, builds into)
-5. Add item cost and cost efficiency calculations
-6. Create item image URL handling
-7. Add item effect and passive parsing
-
-**Expected Benefits:**
-- **Complete item database** from official source
-- **Build paths** and component relationships
-- **Cost efficiency** calculations
-- **Item images** and assets
-
-**Verification:** Can fetch complete item data with stats, costs, and build paths
-
-#### **Task 2.2.4: Version Management and Auto-Updates** *(PENDING)*
-**Objective:** Implement automatic patch detection and data updates  
-**Files:** `src/data_sources/apis/riot_api.py`, `src/core/patch_manager.py`  
-**Status:** 🔄 **PENDING** - Keep data current with game patches
-
-**Instructions:**
-1. Create `PatchManager` class for version tracking
-2. Implement automatic patch detection from Riot API
-3. Add data invalidation when new patches are detected
-4. Create automatic data refresh workflows
-5. Implement patch change tracking and logging
-6. Add rollback capabilities for failed updates
-7. Create patch notification system
+**Core Implementation:**
+- RunesScraper for rune trees and individual runes
+- RunesService for rune data management
+- GetRuneDataTool MCP tool for rune information retrieval
+- Rune trees (Precision, Domination, Sorcery, Resolve, Inspiration)
+- Rune statistics and adaptive force calculations
 
 **Expected Benefits:**
-- **Always current data** with latest patches
-- **Automatic updates** without manual intervention
-- **Patch tracking** for historical analysis
-- **Reliability** with rollback capabilities
-
-**Verification:** Automatically detects new patches and updates champion/item data
-
-### Task 2.3: Create Data Processor for Source Integration
-
-#### **Task 2.3.1: Basic Data Processor Framework** *(PENDING)*
-**Objective:** Create infrastructure for merging data from multiple sources  
-**Files:** `src/data_processing/data_processor.py`  
-**Status:** 🔄 **PENDING** - Required for multi-source data integration
-
-**Instructions:**
-1. Create `DataProcessor` class with source management
-2. Implement data source priority and fallback logic
-3. Add basic data merging infrastructure
-4. Create data format standardization methods
-5. Implement error handling for missing data sources
-6. Add logging for data processing operations
-7. Create data processing metrics and monitoring
-
-**Expected Benefits:**
-- **Multi-source integration** (Wiki + Riot API + Community)
-- **Fallback reliability** when sources are unavailable
-- **Standardized data format** across sources
-- **Processing metrics** for monitoring
-
-**Verification:** Can process data from multiple sources with proper fallback logic
-
-#### **Task 2.3.2: Champion Data Merging** *(PENDING)*
-**Objective:** Merge champion data from Wiki and Riot API sources  
-**Files:** `src/data_processing/data_processor.py`  
-**Status:** 🔄 **PENDING** - Combine wiki and official data
-
-**Instructions:**
-1. Implement `merge_champion_data()` for wiki + Riot data combination
-2. Add intelligent field merging (prefer official stats, wiki descriptions)
-3. Create data conflict detection and resolution
-4. Implement data completeness scoring
-5. Add champion data validation against both sources
-6. Create merged data quality assessment
-7. Add champion-specific merging rules
-
-**Expected Benefits:**
-- **Best of both sources** (official stats + wiki details)
-- **Conflict resolution** for discrepancies
-- **Data completeness** scoring
-- **Quality assessment** for merged data
-
-**Verification:** Produces high-quality merged champion data better than either source alone
-
-#### **Task 2.3.3: Data Validation and Conflict Resolution** *(PENDING)*
-**Objective:** Ensure data quality and resolve conflicts between sources  
-**Files:** `src/data_processing/data_processor.py`  
-**Status:** 🔄 **PENDING** - Data quality assurance
-
-**Instructions:**
-1. Create comprehensive data validation rules
-2. Implement conflict detection between data sources
-3. Add automatic conflict resolution strategies
-4. Create manual conflict review workflows
-5. Implement data quality scoring algorithms
-6. Add data outlier detection and flagging
-7. Create validation reporting and alerts
-
-**Expected Benefits:**
-- **High data quality** through validation
-- **Automatic conflict resolution** 
-- **Quality scoring** for data reliability
-- **Outlier detection** for data issues
-
-**Verification:** Detects and resolves data conflicts with high accuracy
-
-#### **Task 2.3.4: Data Normalization and Quality Scoring** *(PENDING)*
-**Objective:** Normalize data formats and implement quality scoring  
-**Files:** `src/data_processing/data_processor.py`  
-**Status:** 🔄 **PENDING** - Consistent data formatting
-
-**Instructions:**
-1. Implement data normalization (units, formats, naming)
-2. Create quality scoring algorithms for data completeness
-3. Add data freshness scoring and tracking
-4. Implement source reliability scoring
-5. Create overall data quality metrics
-6. Add data quality trend analysis
-7. Create quality-based data selection logic
-
-**Expected Benefits:**
-- **Consistent data formats** across all sources
-- **Quality scoring** for data reliability
-- **Freshness tracking** for current data
-- **Source reliability** assessment
-
-**Verification:** Produces consistently formatted, high-quality data with reliability scores
-
-### Task 2.4: Implement Basic Database Models
-
-#### **Task 2.4.1: SQLAlchemy Setup and Configuration** *(PENDING)*
-**Objective:** Set up database infrastructure and configuration  
-**Files:** `src/core/database.py`, `src/models/__init__.py`  
-**Status:** 🔄 **PENDING** - Database foundation
-
-**Instructions:**
-1. Create SQLAlchemy database configuration and connection management
-2. Implement database URL configuration for multiple environments
-3. Add connection pooling and session management
-4. Create database initialization and setup scripts
-5. Implement database health checks and monitoring
-6. Add transaction management utilities
-7. Create database migration framework setup
-
-**Expected Benefits:**
-- **Robust database foundation** for data persistence
-- **Environment-specific configuration** 
-- **Connection management** for performance
-- **Health monitoring** for reliability
-
-**Verification:** Database connects successfully with proper session management
-
-#### **Task 2.4.2: Champion and Ability Models** *(PENDING)*
-**Objective:** Create database models for champion data  
-**Files:** `src/models/champion.py`, `src/models/ability.py`  
-**Status:** 🔄 **PENDING** - Champion data persistence
-
-**Instructions:**
-1. Create `Champion` SQLAlchemy model with all champion fields
-2. Create `ChampionStats` model for base and per-level statistics
-3. Create `Ability` model for champion abilities (Q, W, E, R, Passive)
-4. Implement proper relationships between Champion, Stats, and Abilities
-5. Add model validation and constraints
-6. Create model serialization methods (to_dict, from_dict)
-7. Add model query helpers and common operations
-
-**Expected Benefits:**
-- **Structured champion storage** in database
-- **Relational data integrity** between champions and abilities
-- **Query optimization** for champion data
-- **Data validation** at model level
-
-**Verification:** Can store and retrieve complete champion data including stats and abilities
-
-#### **Task 2.4.3: Item and Build Path Models** *(PENDING)*
-**Objective:** Create database models for item data and relationships  
-**Files:** `src/models/item.py`, `src/models/build_path.py`  
-**Status:** 🔄 **PENDING** - Item data persistence
-
-**Instructions:**
-1. Create `Item` SQLAlchemy model with stats and properties
-2. Create `ItemStats` model for item statistics (AD, AP, Health, etc.)
-3. Create `BuildPath` model for item component relationships
-4. Implement item categorization and tagging
-5. Add item cost and cost efficiency fields
-6. Create item effect and passive storage
-7. Add item image URL and metadata storage
-
-**Expected Benefits:**
-- **Complete item database** with all game items
-- **Build path relationships** for item progression
-- **Cost efficiency** calculations and storage
-- **Item categorization** for filtering
-
-**Verification:** Can store complete item data with build paths and cost efficiency
-
-#### **Task 2.4.4: Database Migrations and Versioning** *(PENDING)*
-**Objective:** Implement database migrations and historical data management  
-**Files:** `alembic/`, `src/models/version.py`  
-**Status:** 🔄 **PENDING** - Database evolution management
-
-**Instructions:**
-1. Set up Alembic for database migrations
-2. Create initial database migration scripts
-3. Implement soft deletes for historical data preservation
-4. Add data versioning for patch tracking
-5. Create migration rollback and recovery procedures
-6. Implement database backup and restore capabilities
-7. Add migration testing and validation
-
-**Expected Benefits:**
-- **Database evolution** with proper migrations
-- **Historical data** preservation
-- **Patch tracking** for data changes
-- **Rollback capabilities** for safety
-
-**Verification:** Can migrate database schema and preserve historical data
-
-### Task 2.5: Create Data Storage Service
-
-#### **Task 2.5.1: Basic Storage Service Framework** *(PENDING)*
-**Objective:** Create service layer for data persistence operations  
-**Files:** `src/services/storage_service.py`  
-**Status:** 🔄 **PENDING** - Data persistence service layer
-
-**Instructions:**
-1. Create `StorageService` class with database session management
-2. Implement basic CRUD operations (Create, Read, Update, Delete)
-3. Add service-level error handling and logging
-4. Create service initialization and configuration
-5. Implement connection pooling and session lifecycle
-6. Add service health checks and monitoring
-7. Create service-level caching integration
-
-**Expected Benefits:**
-- **Service abstraction** over database operations
-- **Error handling** at service level
-- **Session management** for database operations
-- **Monitoring** for service health
-
-**Verification:** Service can perform basic CRUD operations reliably
-
-#### **Task 2.5.2: Champion Data Persistence** *(PENDING)*
-**Objective:** Implement champion-specific storage operations  
-**Files:** `src/services/storage_service.py`  
-**Status:** 🔄 **PENDING** - Champion data CRUD operations
-
-**Instructions:**
-1. Implement `save_champion_data()` with upsert logic
-2. Add `get_champion_by_name()` with caching integration
-3. Create champion search and filtering methods
-4. Implement champion data validation before storage
-5. Add champion relationship handling (stats, abilities)
-6. Create champion bulk operations for efficiency
-7. Add champion data export and import capabilities
-
-**Expected Benefits:**
-- **Champion data persistence** with validation
-- **Efficient queries** for champion retrieval
-- **Bulk operations** for performance
-- **Data integrity** through validation
-
-**Verification:** Can save and retrieve champion data efficiently with proper relationships
-
-#### **Task 2.5.3: Transaction Management and Batch Operations** *(PENDING)*
-**Objective:** Implement efficient batch operations and transaction handling  
-**Files:** `src/services/storage_service.py`  
-**Status:** 🔄 **PENDING** - Performance and reliability
-
-**Instructions:**
-1. Implement transaction management for complex operations
-2. Add batch insert/update operations for efficiency
-3. Create rollback capabilities for failed operations
-4. Implement optimistic locking for concurrent access
-5. Add deadlock detection and retry logic
-6. Create performance monitoring for storage operations
-7. Add storage operation caching and optimization
-
-**Expected Benefits:**
-- **Transaction safety** for complex operations
-- **Batch efficiency** for large data sets
-- **Rollback capabilities** for error recovery
-- **Performance optimization** for storage
-
-**Verification:** Can handle large batch operations with proper transaction management
-
-#### **Task 2.5.4: Data Versioning and Patch Tracking** *(PENDING)*
-**Objective:** Implement data versioning for patch and historical tracking  
-**Files:** `src/services/storage_service.py`, `src/models/version.py`  
-**Status:** 🔄 **PENDING** - Historical data management
-
-**Instructions:**
-1. Create data versioning system for patch tracking
-2. Implement historical data storage and retrieval
-3. Add patch-based data comparison capabilities
-4. Create data archiving for old patch data
-5. Implement version-based rollback capabilities
-6. Add patch migration and data update workflows
-7. Create version analytics and reporting
-
-**Expected Benefits:**
-- **Historical tracking** of all data changes
-- **Patch comparison** for meta analysis
-- **Rollback capabilities** for data recovery
-- **Version analytics** for trends
-
-**Verification:** Can track data changes across patches with proper versioning
+- Complete rune system with accurate bonuses
+- Rune optimization for different champions
+- Meta tracking for popular rune choices
+- Training data for AI decision making
 
 ---
 
-## Phase 3: Caching and Performance
+## Phase 3: Advanced Features & User Tools
 
-### Task 3.1: Implement Redis Caching Layer
-**Objective:** Add Redis for high-performance data caching  
-**Files:** `src/lol_data_mcp_server/cache/redis_cache.py`  
-**Instructions:**
-1. Create `RedisCache` class with async Redis client
-2. Implement cache key strategies (champion:{name}, item:{id})
-3. Add TTL management for different data types
-4. Implement cache invalidation on data updates
-5. Add cache hit/miss metrics
-6. Create fallback to database on cache miss
-7. Implement cache warming strategies
+### **Task 3.1: Player Search and Analytics**
+**Objective:** Implement player lookup and performance analysis  
+**Status:** 🔄 **PENDING** - Player data and analytics
 
-**Verification:** Champion data served from cache with <10ms response times
+**Purpose:**
+- **For taric_ai_agent**: High-ELO player data for imitation learning
+- **For general users**: Player statistics and performance tracking
 
-### Task 3.2: Implement Multi-Level Caching Strategy
-**Objective:** Create efficient multi-tier caching system  
-**Files:** `src/lol_data_mcp_server/cache/cache_manager.py`  
-**Instructions:**
-1. Create `CacheManager` with L1 (memory) and L2 (Redis) caches
-2. Implement cache-aside pattern
-3. Add intelligent cache warming
-4. Create cache statistics and monitoring
-5. Implement cache size limits and LRU eviction
-6. Add cache coherence across instances
-7. Create cache debugging tools
+**Core Ideas:**
+- Player search by name, region, rank
+- Match history with detailed stats
+- Performance analytics (KDA, win rates, champion mastery)
+- Rank tracking and LP progression
+- Champion-specific performance metrics
 
-**Verification:** 95% cache hit rate with sub-100ms response times
+### **Task 3.2: Build and Skill Order Recommendations**
+**Objective:** Provide intelligent build and skill recommendations  
+**Status:** 🔄 **PENDING** - AI-driven recommendations
 
-### Task 3.3: Optimize Database Queries
-**Objective:** Implement efficient database access patterns  
-**Files:** `src/lol_data_mcp_server/services/query_service.py`  
-**Instructions:**
-1. Create `QueryService` with optimized database queries
-2. Add database indexes for common query patterns
-3. Implement query result caching
-4. Add connection pooling and management
-5. Create prepared statements for common queries
-6. Implement query performance monitoring
-7. Add query timeout and retry logic
+**Purpose:**
+- **For taric_ai_agent**: Static build and skill order data for AI training
+- **For general users**: Meta build analysis and recommendations
 
-**Verification:** Database queries complete in <50ms for champion data
+**Core Ideas:**
+- Meta build analysis from high-ELO players
+- Situational builds based on team composition
+- Skill order optimization for different scenarios
+- Counter-build suggestions against specific champions
+- Pro player build tracking and analysis
 
-### Task 3.4: Implement Search Functionality
-**Objective:** Create search capabilities for champions and items  
-**Files:** `src/lol_data_mcp_server/services/search_service.py`  
-**Instructions:**
-1. Create `SearchService` with text search capabilities
-2. Implement champion search by name, role, tags
-3. Add fuzzy matching for typos
-4. Create search result ranking and scoring
-5. Add search query caching
-6. Implement faceted search (filters)
-7. Add search analytics and optimization
+### **Task 3.3: Match Analysis Tools**
+**Objective:** Deep match analysis and insights  
+**Status:** 🔄 **PENDING** - Match breakdown tools
 
-**Verification:** Search returns relevant results in <100ms
+**Purpose:**
+- **For taric_ai_agent**: Training data from real match scenarios
+- **For general users**: Educational match analysis and insights
+
+**Core Ideas:**
+- Timeline analysis with key moments
+- Damage analysis (dealt, taken, healing)
+- Objective control and ward analysis
+- Team fight breakdown and positioning
+- Win condition analysis and patterns
 
 ---
 
-## Phase 4: Imitation Learning Data Services (NEW - PRIORITY)
+## Phase 4: Training Data & AI Support
 
-### Task 4.1: Implement Imitation Learning Dataset Generator
-**Objective:** Generate ready-to-train datasets for imitation learning  
-**Files:** `src/lol_data_mcp_server/imitation/dataset_generator.py`  
-**Instructions:**
-1. Create `ImitationDatasetGenerator` class
-2. Implement `generate_imitation_dataset()` for champion-specific data
-3. Add data preprocessing pipeline (normalization, feature engineering)
-4. Create multi-format export (JSON, PyTorch tensors, NumPy arrays)
-5. Implement data quality validation and filtering
-6. Add scenario labeling and categorization
-7. Create incremental dataset updates
+### **Task 4.1: Training Data Generation**
+**Objective:** Generate training datasets for AI projects  
+**Status:** 🔄 **PENDING** - AI training pipeline
 
-**Verification:** Generates training-ready datasets in multiple formats
+**Purpose:**
+- **For taric_ai_agent**: RL training data and imitation learning datasets
+- **For general users**: Access to processed gameplay data
 
-### Task 4.2: Implement Player Demonstration Processor
-**Objective:** Process high-ELO player data into demonstration format  
-**Files:** `src/lol_data_mcp_server/imitation/demonstration_processor.py`  
-**Instructions:**
-1. Create `DemonstrationProcessor` class
-2. Implement player-specific data collection and filtering
-3. Add behavioral pattern extraction
-4. Create demonstration quality scoring
-5. Implement temporal sequence processing
-6. Add state-action alignment validation
-7. Create demonstration export in training formats
+**Core Ideas:**
+- State-action pairs for reinforcement learning
+- High-ELO demonstration data extraction
+- Scenario-specific training data generation
+- Reward calculation systems for AI feedback
+- Data validation and quality assurance
 
-**Verification:** Processes player data into clean demonstration sequences
+### **Task 4.2: Simulation Environment Support**
+**Objective:** Provide data backbone for lol_sim_env  
+**Status:** 🔄 **PENDING** - Simulation data pipeline
 
-### Task 4.3: Implement Scenario-Based Training Data
-**Objective:** Generate scenario-labeled training data for targeted learning  
-**Files:** `src/lol_data_mcp_server/imitation/scenario_trainer.py`  
-**Instructions:**
-1. Create `ScenarioTrainer` class with 12+ core scenarios
-2. Implement scenario detection and labeling algorithms
-3. Add context-aware scenario extraction
-4. Create difficulty level classification
-5. Implement balanced scenario sampling
-6. Add scenario-specific reward calculation
-7. Create scenario validation and testing
+**Purpose:**
+- **For lol_sim_env**: Complete game rules and mechanics data
+- **For taric_ai_agent**: Accurate simulation environment for training
 
-**Verification:** Generates labeled training data for specific gameplay scenarios
-
-### Task 4.4: Implement Training Data Validation Service
-**Objective:** Validate and score training data quality  
-**Files:** `src/lol_data_mcp_server/imitation/data_validator.py`  
-**Instructions:**
-1. Create `TrainingDataValidator` class
-2. Implement completeness and consistency checks
-3. Add diversity and quality scoring
-4. Create labeling accuracy validation
-5. Implement data distribution analysis
-6. Add outlier detection and filtering
-7. Create validation reports and recommendations
-
-**Verification:** Provides comprehensive data quality assessment
+**Core Ideas:**
+- Game mechanics formulas and calculations
+- Champion ability interactions and combos
+- Map data with terrain and objectives
+- Economic systems (gold generation, spending)
+- Balance data for accurate simulation
 
 ---
 
-## Phase 5: Advanced Analysis Features
+## Phase 5: Performance & Scalability
 
-### Task 5.1: Implement Frame-by-Frame Analysis Engine
-**Objective:** Create sophisticated match timeline analysis system  
-**Files:** `src/lol_data_mcp_server/analysis/frame_analyzer.py`  
-**Instructions:**
-1. Create `FrameAnalyzer` class for timeline processing
-2. Implement `extract_timeline_events()` for temporal data
-3. Add game state reconstruction at any timestamp
-4. Create champion-specific event detection
-5. Implement cooldown tracking with ability haste
-6. Add positioning and movement analysis
-7. Create combat metrics extraction
+### **Task 5.1: Caching and Performance**
+**Objective:** Implement high-performance data access  
+**Status:** 🔄 **PENDING** - Performance optimization
 
-**Verification:** Can analyze match timeline and extract detailed game states
+**Core Ideas:**
+- Redis caching layer for frequently accessed data
+- Multi-level caching strategy
+- Cache invalidation on data updates
+- Performance metrics and monitoring
+- Response time optimization
 
-### Task 5.2: Implement Enhanced Data Extraction
-**Objective:** Extract high-level gameplay features from raw data  
-**Files:** `src/lol_data_mcp_server/analysis/enhanced_extractor.py`  
-**Instructions:**
-1. Create `EnhancedDataExtractor` class
-2. Implement positional data analysis (map regions, objectives)
-3. Add combat metrics (threat assessment, healing efficiency)
-4. Create decision context analysis (game phase, win conditions)
-5. Implement player input pattern recognition
-6. Add team coordination metrics
-7. Create environmental context tracking
+### **Task 5.2: Database and Storage**
+**Objective:** Persistent storage for large datasets  
+**Status:** 🔄 **PENDING** - Data persistence
 
-**Verification:** Generates comprehensive enhanced features from match data
-
-### Task 5.3: Implement State-Action Pair Generator
-**Objective:** Generate training data for reinforcement learning  
-**Files:** `src/lol_data_mcp_server/training/state_action_generator.py`  
-**Instructions:**
-1. Create `StateActionGenerator` class
-2. Implement `create_state_action_pairs()` method
-3. Add comprehensive game state representation
-4. Create action classification and labeling
-5. Implement reward signal calculation
-6. Add temporal sequence handling
-7. Create data serialization for training
-
-**Verification:** Generates structured state-action pairs suitable for RL training
-
-### Task 5.4: Implement Scenario Generation System
-**Objective:** Create comprehensive gameplay scenarios for training  
-**Files:** `src/lol_data_mcp_server/scenarios/scenario_generator.py`  
-**Instructions:**
-1. Create `ScenarioGenerator` class with 40+ scenario templates
-2. Implement ability-specific scenarios (Q, W, E, R usage)
-3. Add positioning scenarios (frontline, backline, zone control)
-4. Create combat scenarios (team fights, skirmishes, duels)
-5. Implement macro decision scenarios (objectives, rotations)
-6. Add champion-specific special mechanics
-7. Create scenario validation and testing
-
-**Verification:** Generates comprehensive scenario datasets for champion training
-
-### Task 5.5: Implement Player Performance Analytics
-**Objective:** Analyze individual player performance and patterns  
-**Files:** `src/lol_data_mcp_server/analytics/player_analyzer.py`  
-**Instructions:**
-1. Create `PlayerAnalyzer` class
-2. Implement gameplay pattern recognition
-3. Add performance metric calculation
-4. Create meta comparison analysis
-5. Implement improvement recommendations
-6. Add trend analysis across multiple games
-7. Create personalized insights generation
-
-**Verification:** Provides detailed player analysis with actionable insights
+**Core Ideas:**
+- SQLAlchemy models for structured data
+- Data versioning across patches
+- Bulk operations for efficient updates
+- Migration system for schema evolution
+- Historical data preservation
 
 ---
 
-## Phase 6: Training Data Services
+## Phase 6: Integration & APIs
 
-### Task 6.1: Implement High-ELO Data Collection
-**Objective:** Collect and process data from top-tier players  
-**Files:** `src/lol_data_mcp_server/collectors/high_elo_collector.py`  
-**Instructions:**
-1. Create `HighEloCollector` class
-2. Implement player discovery by rank and champion
-3. Add bulk match data collection
-4. Create data quality filtering
-5. Implement champion-specific filtering
-6. Add automated collection scheduling
-7. Create collection monitoring and alerts
+### **Task 6.1: Riot API Integration**
+**Objective:** Integrate official Riot Games API  
+**Status:** 🔄 **PENDING** - Official data source
 
-**Verification:** Automatically collects high-quality training data from top players
+**Purpose:**
+- **Hybrid approach**: Combine official API with Wiki scraping
+- **Real-time data**: Live match information and player stats
+- **Asset access**: Champion icons, ability images, and resources
 
-### Task 6.2: Implement Training Dataset Manager
-**Objective:** Manage and serve large training datasets  
-**Files:** `src/lol_data_mcp_server/training/dataset_manager.py`  
-**Instructions:**
-1. Create `DatasetManager` class
-2. Implement dataset versioning and management
-3. Add dataset splitting (train/validation/test)
-4. Create data augmentation capabilities
-5. Implement dataset statistics and validation
-6. Add incremental dataset updates
-7. Create dataset export in multiple formats
+**Core Ideas:**
+- Riot API client with rate limiting
+- Official match and player data access
+- Asset downloads and management
+- Data synchronization between sources
+- Hybrid data validation and merging
 
-**Verification:** Manages comprehensive training datasets with proper versioning
+### **Task 6.2: External Data Sources**
+**Objective:** Connect with external LoL data sources  
+**Status:** 🔄 **PENDING** - Data source expansion
 
-### Task 6.3: Implement Meta Analysis Engine
-**Objective:** Track and analyze meta trends for contextual training  
-**Files:** `src/lol_data_mcp_server/meta/meta_analyzer.py`  
-**Instructions:**
-1. Create `MetaAnalyzer` class
-2. Implement build trend analysis
-3. Add champion win rate tracking
-4. Create patch impact analysis
-5. Implement skill order optimization
-6. Add item effectiveness scoring
-7. Create meta prediction capabilities
-
-**Verification:** Provides comprehensive meta analysis and trends
+**Core Ideas:**
+- Champion.gg for build and winrate data
+- OP.GG for player statistics
+- Lolalytics for advanced analytics
+- U.GG for tier lists and meta analysis
+- Data aggregation and normalization
 
 ---
 
-## Phase 7: Production Readiness
+## Phase 7: Production & Quality
 
-### Task 7.1: Implement Comprehensive Testing
-**Objective:** Create thorough test coverage for all components  
-**Files:** `tests/` directory structure  
-**Instructions:**
-1. Create unit tests for all services and utilities
-2. Add integration tests for API endpoints
-3. Implement performance tests for caching
-4. Create load tests for high traffic scenarios
-5. Add data validation tests
-6. Implement mock data for testing
-7. Create CI/CD pipeline with automated testing
+### **Task 7.1: Testing and Validation**
+**Objective:** Comprehensive testing suite  
+**Status:** 🔄 **PENDING** - Quality assurance
 
-**Verification:** 90%+ test coverage with all tests passing
+**Core Ideas:**
+- Unit testing for all components
+- Integration testing for end-to-end functionality
+- Performance testing under load
+- Data validation and accuracy checks
+- Automated testing pipeline
 
-### Task 7.2: Add Monitoring and Observability
-**Objective:** Implement comprehensive monitoring and logging  
-**Files:** `src/lol_data_mcp_server/monitoring/`  
-**Instructions:**
-1. Add Prometheus metrics collection
-2. Implement structured logging with correlation IDs
-3. Create health check endpoints
-4. Add performance monitoring and alerting
-5. Implement error tracking and reporting
-6. Create metrics dashboards
-7. Add distributed tracing
+### **Task 7.2: Deployment and Monitoring**
+**Objective:** Production-ready deployment  
+**Status:** 🔄 **PENDING** - Production deployment
 
-**Verification:** Full observability into system performance and errors
-
-### Task 7.3: Implement Security and Authentication
-**Objective:** Add production-grade security features  
-**Files:** `src/lol_data_mcp_server/auth/`  
-**Instructions:**
-1. Implement API key authentication
-2. Add rate limiting per client
-3. Create input validation and sanitization
-4. Implement CORS and security headers
-5. Add audit logging for security events
-6. Create role-based access control
-7. Implement security monitoring
-
-**Verification:** Secure API with proper authentication and rate limiting
-
-### Task 7.4: Deployment and Scaling Configuration
-**Objective:** Prepare for production deployment  
-**Files:** `docker/`, `k8s/`, deployment configs  
-**Instructions:**
-1. Create Docker containers for all services
-2. Implement Docker Compose for development
-3. Create Kubernetes deployment manifests
-4. Add horizontal pod autoscaling
-5. Implement database migrations in production
-6. Create backup and recovery procedures
-7. Add deployment automation scripts
-
-**Verification:** Successfully deploys to production environment with scaling
+**Core Ideas:**
+- Docker containerization
+- Health monitoring and alerting
+- Structured logging and tracing
+- Auto-scaling capabilities
+- Error tracking and reporting
 
 ---
 
-## Phase 8: Missing MCP Tool Implementation
+## Phase 8: Documentation & Community
 
-### Task 8.1: Implement Search Champions Tool
-**Objective:** Add mock data to SearchChampionsTool to return meaningful champion search results  
-**Files:** `src/mcp_server/tools.py`  
-**Status:** 🔄 **PENDING** - Required to fix empty search results
+### **Task 8.1: Documentation System**
+**Objective:** Complete user and developer documentation  
+**Status:** 🔄 **PENDING** - Documentation
 
-**Instructions:**
-1. Add mock champion database with names, roles, tags, and descriptions
-2. Implement search filtering by role (top, jungle, mid, adc, support)
-3. Add tag-based filtering (Tank, Fighter, Mage, etc.)
-4. Implement fuzzy text search across champion names and descriptions
-5. Add result limiting and pagination
-6. Create search result ranking by relevance
-7. Add comprehensive test coverage for search functionality
+**Core Ideas:**
+- API documentation with examples
+- Usage guides and tutorials
+- Developer contribution guidelines
+- Integration documentation
+- Best practices and patterns
 
-**Verification:** `search_champions` MCP tool returns relevant champions based on query parameters
+### **Task 8.2: Community Support**
+**Objective:** Tools for community developers  
+**Status:** 🔄 **PENDING** - Community features
 
-**Current Issue:** Tool returns empty array for all search queries
-
-### Task 8.2: Implement Item Data Tool  
-**Objective:** Create ItemService and add mock item data to GetItemDataTool  
-**Files:** `src/services/item_service.py`, `src/mcp_server/tools.py`  
-**Status:** 🔄 **PENDING** - Required to fix empty item responses
-
-**Instructions:**
-1. Create `ItemService` class with comprehensive item data structure
-2. Add mock data for core items (Infinity Edge, Rabadon's, Guardian Angel, etc.)
-3. Implement item stats (AD, AP, Health, Armor, Magic Resist, etc.)
-4. Add item components and build paths
-5. Implement cost calculations and cost efficiency
-6. Add passive and active effects descriptions
-7. Create item categorization (Damage, Defense, Utility, etc.)
-8. Update GetItemDataTool to use ItemService
-
-**Verification:** `get_item_data` MCP tool returns complete item information with stats and costs
-
-**Current Issue:** Tool returns empty stats and cost objects for all items
-
-### Task 8.3: Implement Meta Builds Tool
-**Objective:** Create MetaService and add mock build data to GetMetaBuildsTool  
-**Files:** `src/services/meta_service.py`, `src/mcp_server/tools.py`  
-**Status:** 🔄 **PENDING** - Required to fix empty builds responses
-
-**Instructions:**
-1. Create `MetaService` class with build recommendation system
-2. Add mock meta builds for champions (core items, skill order, runes)
-3. Implement role-specific builds (Taric Support vs Taric Top)
-4. Add win rate and pick rate statistics
-5. Implement rank-specific build variations (Diamond+ vs All ranks)
-6. Add patch-specific build tracking
-7. Create build effectiveness scoring
-8. Update GetMetaBuildsTool to use MetaService
-
-**Verification:** `get_meta_builds` MCP tool returns complete build recommendations with statistics
-
-**Current Issue:** Tool returns empty builds array for all champions
-
----
-
-## Phase 9: MCP Tool Development Guidelines
-
-### Task 9.1: Create MCP Tool Development Guidelines
-**Objective:** Establish standards and patterns for implementing MCP tools  
-**Files:** `docs/mcp_tool_development_guide.md`  
-**Status:** 🔄 **PENDING** - Required for consistent tool implementation
-
-**Instructions:**
-1. Document MCP tool architecture patterns used in the project
-2. Create template for implementing new MCP tools
-3. Add input validation best practices using Pydantic
-4. Document error handling patterns and MCP error codes
-5. Create testing guidelines for MCP tools
-6. Add performance optimization guidelines
-7. Document integration patterns with service layer
-
-**Verification:** Clear guidelines available for implementing new MCP tools consistently
-
-### Task 9.2: MCP Tool Integration Testing
-**Objective:** Create comprehensive integration tests for all MCP tools  
-**Files:** `tests/test_mcp_integration.py`  
-**Status:** 🔄 **PENDING** - Required to verify complete MCP functionality
-
-**Instructions:**
-1. Create integration tests that test MCP tools through the full protocol stack
-2. Add tests for all 7 MCP tools with realistic input scenarios
-3. Implement error case testing (invalid inputs, missing data)
-4. Add performance testing for MCP tool response times
-5. Create tests for Cursor IDE integration scenarios
-6. Add regression testing for tool output formats
-7. Implement automated testing in CI pipeline
-
-**Verification:** All MCP tools pass comprehensive integration tests
-
----
-
-## Phase 10: Complete MCP Foundation
-
-### Task 10.1: Complete MCP Tool Validation
-**Objective:** Ensure all 7 MCP tools return complete, meaningful data  
-**Files:** Multiple service and tool files  
-**Status:** 🔄 **PENDING** - Required for full MCP server functionality
-
-**Instructions:**
-1. Verify all MCP tools return non-empty, structured responses
-2. Test tool integration with realistic champion and item names
-3. Validate input parameter handling and error responses
-4. Ensure consistent data formats across all tools
-5. Test edge cases and error conditions
-6. Verify tool performance meets response time requirements
-7. Complete end-to-end testing with Cursor IDE integration
-
-**Verification:** All 7 MCP tools (5 LoL + 2 basic) return complete data with 100% functionality
-
-**Success Criteria:**
-- ✅ `ping` and `server_info` - Already working
-- ✅ `get_champion_data` and `get_ability_details` - Already working  
-- 🔄 `search_champions` - Needs Task 8.1 implementation
-- 🔄 `get_item_data` - Needs Task 8.2 implementation
-- 🔄 `get_meta_builds` - Needs Task 8.3 implementation
-
-### Task 10.2: Documentation Synchronization
-**Objective:** Ensure all documentation reflects current implementation status  
-**Files:** `README.md`, `docs/lol_data_mcp_server.md`, `CURSOR_INTEGRATION.md`  
-**Status:** 🔄 **PENDING** - Keep documentation current with implementation
-
-**Instructions:**
-1. Update README.md with current task status and completion percentage
-2. Synchronize technical documentation with actual implementation
-3. Update feature lists to reflect working vs pending functionality
-4. Add usage examples for all working MCP tools
-5. Update integration guides with current configuration
-6. Add troubleshooting section for common issues
-7. Create developer onboarding documentation
-
-**Verification:** Documentation accurately reflects current project state and functionality
+**Core Ideas:**
+- SDK development for popular languages
+- Plugin system for extensibility
+- Example applications and demos
+- Community contribution workflows
+- Open source development guidelines
 
 ---
 
