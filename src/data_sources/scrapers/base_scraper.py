@@ -28,7 +28,18 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
-from src.models import ChampionNotFoundError
+try:
+    from src.models.exceptions import ChampionNotFoundError
+except ImportError:
+    # Fallback for different import contexts
+    try:
+        from models.exceptions import ChampionNotFoundError
+    except ImportError:
+        # Define locally if import fails
+        class ChampionNotFoundError(Exception):
+            def __init__(self, champion_name: str):
+                self.champion_name = champion_name
+                super().__init__(f"Champion '{champion_name}' not found")
 
 
 class WikiScraperError(Exception):
