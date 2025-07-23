@@ -10,7 +10,7 @@ import re
 from typing import Dict, Any, Optional
 import structlog
 
-from src.data_sources.scrapers.stats_scraper import StatsScraper, WikiScraperError
+from src.data_sources.scrapers.champions.stats_scraper import StatsScraper, WikiScraperError
 from src.models.exceptions import ChampionNotFoundError
 
 

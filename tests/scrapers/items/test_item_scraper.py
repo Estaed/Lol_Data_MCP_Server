@@ -9,7 +9,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from bs4 import BeautifulSoup
 
-from src.data_sources.scrapers.item_scraper import (
+from src.data_sources.scrapers.items.item_scraper import (
     ItemScraper, ItemData, ItemStats, ItemPassive, ItemRecipe, ItemAvailability
 )
 

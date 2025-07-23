@@ -26,9 +26,9 @@ from typing import Dict, List, Any
 import json
 
 # Add src directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from services.abilities_service import AbilitiesService
+from services.champions.abilities_service import AbilitiesService
 
 # Complete list of League of Legends champions (as of 2024)
 CHAMPIONS = [

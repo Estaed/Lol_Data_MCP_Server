@@ -10,7 +10,7 @@ import re
 from typing import Dict, Any, Optional
 import structlog
 
-from src.data_sources.scrapers.patch_note_scraper import PatchNoteScraper, WikiScraperError
+from src.data_sources.scrapers.champions.patch_note_scraper import PatchNoteScraper, WikiScraperError
 from src.models.exceptions import ChampionNotFoundError
 
 

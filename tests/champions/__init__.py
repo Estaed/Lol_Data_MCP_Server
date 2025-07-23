@@ -1,0 +1,1 @@
+"""Champion-related tests."""

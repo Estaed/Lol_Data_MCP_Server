@@ -303,9 +303,9 @@ class ToolRegistry:
         
         # Delay service imports to avoid circular import
         try:
-            from src.services.stats_service import StatsService
-            from src.services.abilities_service import AbilitiesService
-            from src.services.patch_note_service import PatchNoteService
+            from src.services.champions.stats_service import StatsService
+            from src.services.champions.abilities_service import AbilitiesService
+            from src.services.champions.patch_note_service import PatchNoteService
             
             stats_service = StatsService()
             abilities_service = AbilitiesService()
