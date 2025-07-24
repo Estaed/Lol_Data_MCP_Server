@@ -501,10 +501,13 @@ class ItemDataScraper(BaseScraper):
                 # Fallback: extract everything after base value
                 stat_name = re.sub(r'^[+-]?\d+(?:\.\d+)?(?:\s*\([^)]*\))?\s*', '', stat_text).strip()
             
-            # Clean stat name
+            # FIXED: Clean stat name and remove number prefixes
             stat_name = stat_name.strip().lower()
             stat_name = re.sub(r'[^\w\s%]', '', stat_name)  # Keep % for percentages
             stat_name = stat_name.replace(' ', '_')
+            
+            # Remove any leading numbers and underscores (like "35_" from "35_ability_power")
+            stat_name = re.sub(r'^\d+_*', '', stat_name)
             
             # FIXED: For masterwork tab, create structured object with base/bonus/total
             if tab_type == 'masterwork':
@@ -736,7 +739,7 @@ class ItemDataScraper(BaseScraper):
             return items[0] if items else {}
 
     def _build_recipe_hierarchy(self, main_item: Dict[str, Any], components: List[Dict[str, Any]]) -> List[str]:
-        """Build hierarchical recipe format."""
+        """ENHANCED: Build proper recipe tree showing component relationships."""
         try:
             hierarchy = []
             
@@ -753,14 +756,39 @@ class ItemDataScraper(BaseScraper):
             
             hierarchy.append(f"{main_name}{cost_str}")
             
-            # Sort components by cost (highest first for logical ordering)
+            # ENHANCED: Build recipe tree based on cost relationships
+            recipe_tree = self._build_component_tree(components)
+            
+            # Add tree structure to hierarchy
+            for tree_line in recipe_tree:
+                hierarchy.append(f"  {tree_line}")
+            
+            return hierarchy
+            
+        except Exception as e:
+            self.logger.error(f"Error building recipe hierarchy: {e}")
+            return []
+
+    def _build_component_tree(self, components: List[Dict[str, Any]]) -> List[str]:
+        """Build component tree showing which items build into others."""
+        try:
+            tree_lines = []
+            
+            # Sort components by cost (highest first)
             components.sort(key=lambda x: x.get('total_cost', 0), reverse=True)
             
-            # Add components with indentation
-            for component in components:
-                name = component.get('name', 'Unknown')
-                cost = component.get('total_cost')
-                combine = component.get('combine_cost')
+            # Identify intermediate items (items with combine cost) vs basic items
+            intermediate_items = [c for c in components if c.get('combine_cost', 0) > 0]
+            basic_items = [c for c in components if c.get('combine_cost', 0) == 0]
+            
+            # Track which basic items are already assigned to intermediate items
+            assigned_basic_items = set()
+            
+            # Process intermediate items and their sub-components
+            for intermediate in intermediate_items:
+                name = intermediate.get('name', 'Unknown')
+                cost = intermediate.get('total_cost')
+                combine = intermediate.get('combine_cost')
                 
                 cost_str = ""
                 if cost:
@@ -768,12 +796,66 @@ class ItemDataScraper(BaseScraper):
                     if combine:
                         cost_str += f"({combine})"
                 
-                hierarchy.append(f"  {name}{cost_str}")
+                tree_lines.append(f"{name}{cost_str}")
+                
+                # Find basic components that could build into this intermediate item
+                sub_components = self._find_sub_components_for_item(intermediate, basic_items, assigned_basic_items)
+                
+                for sub_comp in sub_components:
+                    sub_name = sub_comp.get('name', 'Unknown')
+                    sub_cost = sub_comp.get('total_cost')
+                    
+                    sub_cost_str = f" - {sub_cost}" if sub_cost else ""
+                    tree_lines.append(f"  └── {sub_name}{sub_cost_str}")
+                    assigned_basic_items.add(sub_name)
             
-            return hierarchy
+            # Add remaining unassigned basic items
+            for basic in basic_items:
+                if basic.get('name') not in assigned_basic_items:
+                    name = basic.get('name', 'Unknown')
+                    cost = basic.get('total_cost')
+                    cost_str = f" - {cost}" if cost else ""
+                    tree_lines.append(f"{name}{cost_str}")
+            
+            return tree_lines
             
         except Exception as e:
-            self.logger.error(f"Error building recipe hierarchy: {e}")
+            self.logger.error(f"Error building component tree: {e}")
+            return []
+
+    def _find_sub_components_for_item(self, intermediate_item: Dict[str, Any], basic_items: List[Dict[str, Any]], assigned: set) -> List[Dict[str, Any]]:
+        """Find basic items that likely build into the intermediate item."""
+        try:
+            sub_components = []
+            intermediate_cost = intermediate_item.get('total_cost', 0)
+            combine_cost = intermediate_item.get('combine_cost', 0)
+            
+            # Calculate the total cost of basic components needed
+            # intermediate_cost = sum(basic_costs) + combine_cost
+            target_basic_cost = intermediate_cost - combine_cost
+            
+            # Find combinations of basic items that sum close to target cost
+            available_basic = [b for b in basic_items if b.get('name') not in assigned]
+            
+            # Simple heuristic: take the most expensive unassigned basic items first
+            # until we reach close to the target cost
+            available_basic.sort(key=lambda x: x.get('total_cost', 0), reverse=True)
+            
+            current_cost = 0
+            for basic in available_basic:
+                basic_cost = basic.get('total_cost', 0)
+                if current_cost + basic_cost <= target_basic_cost + 50:  # Allow 50 gold tolerance
+                    sub_components.append(basic)
+                    current_cost += basic_cost
+                    
+                    # Usually items have 2-3 basic components, so limit it
+                    if len(sub_components) >= 3:
+                        break
+            
+            return sub_components
+            
+        except Exception as e:
+            self.logger.error(f"Error finding sub-components: {e}")
             return []
 
     def _extract_item_name_and_price_css(self, item_div: Tag) -> Optional[Dict[str, Any]]:
@@ -1552,12 +1634,13 @@ class ItemDataScraper(BaseScraper):
                         # Use merged text to handle fragmented spans
                         merged_text = self._merge_fragmented_text(item)
                         if merged_text and len(merged_text.strip()) > 5:
-                            # Categorize notes based on content
-                            if any(keyword in merged_text.lower() for keyword in 
-                                   ['damage', 'heal', 'shield', 'effect', 'missile', 'projectile', 'trigger', 'stack', 'passive', 'active', 'unique']):
-                                notes_data['gameplay_notes'].append(merged_text.strip())
-                            else:
-                                notes_data['interactions'].append(merged_text.strip())
+                            # ENHANCED: Add topic sentences and categorize notes
+                            categorized_note = self._categorize_and_format_note(merged_text.strip())
+                            if categorized_note:
+                                if categorized_note['category'] == 'gameplay':
+                                    notes_data['gameplay_notes'].append(categorized_note['formatted_text'])
+                                else:
+                                    notes_data['interactions'].append(categorized_note['formatted_text'])
             
             # ADDED: Extract Map-Specific Differences section using CSS selector
             map_section = main_content.find('h2', string=lambda text: text and 'map-specific differences' in text.lower()) if main_content else None
@@ -1575,6 +1658,76 @@ class ItemDataScraper(BaseScraper):
             self.logger.error(f"Error extracting notes section: {e}")
             return None
 
+    def _categorize_and_format_note(self, note_text: str) -> Optional[Dict[str, str]]:
+        """ENHANCED: Add topic sentences and categorize notes for better readability."""
+        try:
+            formatted_text = note_text
+            category = 'interaction'  # default
+            
+            # Detect category and add topic sentences
+            note_lower = note_text.lower()
+            
+            # Damage-related mechanics
+            if any(keyword in note_lower for keyword in ['damage', 'deals', 'magic damage', 'physical damage', 'true damage']):
+                if 'default damage' in note_lower:
+                    formatted_text = f"**Damage Type**: {note_text}"
+                elif 'blocked' in note_lower and 'spell shield' in note_lower:
+                    formatted_text = f"**Spell Shield Interaction**: {note_text}"
+                else:
+                    formatted_text = f"**Damage Mechanics**: {note_text}"
+                category = 'gameplay'
+            
+            # Healing and shielding mechanics
+            elif any(keyword in note_lower for keyword in ['heal', 'healing', 'shield', 'shielding']):
+                if 'trigger' in note_lower or 'will not' in note_lower:
+                    formatted_text = f"**Trigger Conditions**: {note_text}"
+                else:
+                    formatted_text = f"**Healing/Shielding**: {note_text}"
+                category = 'gameplay'
+            
+            # Projectile and missile mechanics
+            elif any(keyword in note_lower for keyword in ['projectile', 'missile', 'launches']):
+                formatted_text = f"**Projectile Mechanics**: {note_text}"
+                category = 'gameplay'
+            
+            # Targeting mechanics
+            elif any(keyword in note_lower for keyword in ['auto-targeted', 'target', 'range', 'global']):
+                formatted_text = f"**Targeting**: {note_text}"
+                category = 'gameplay'
+            
+            # Timing and cooldown mechanics
+            elif any(keyword in note_lower for keyword in ['seconds', 'cooldown', 'after', 'land']):
+                formatted_text = f"**Timing**: {note_text}"
+                category = 'gameplay'
+            
+            # Trigger conditions
+            elif any(keyword in note_lower for keyword in ['trigger', 'will not trigger', 'activate', 'effect']):
+                formatted_text = f"**Trigger Conditions**: {note_text}"
+                category = 'gameplay'
+            
+            # Bug reports
+            elif any(keyword in note_lower for keyword in ['bug', 'occasionally fail', 'fixed']):
+                formatted_text = f"**Known Issues**: {note_text}"
+                category = 'interaction'
+            
+            # Champion-specific interactions
+            elif any(keyword in note_lower for keyword in ['affects', 'untargetable', 'allies']):
+                formatted_text = f"**Champion Interactions**: {note_text}"
+                category = 'interaction'
+            
+            # Passive/Active ability mechanics
+            elif any(keyword in note_lower for keyword in ['passive', 'active', 'unique', 'stack']):
+                formatted_text = f"**Ability Mechanics**: {note_text}"
+                category = 'gameplay'
+            
+            return {
+                'formatted_text': formatted_text,
+                'category': category
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error categorizing note: {e}")
+            return {'formatted_text': note_text, 'category': 'interaction'}
 
     def _merge_fragmented_text(self, element: Tag) -> str:
         """FIXED: Merge fragmented text across spans without duplicates."""
