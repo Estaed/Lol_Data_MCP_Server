@@ -637,26 +637,102 @@ class ItemDataScraper(BaseScraper):
             return None
 
     def _extract_recipe_section(self, soup: BeautifulSoup) -> Optional[Dict[str, Any]]:
-        """Extract hierarchical recipe information with component relationships and costs."""
+        """ENHANCED: Extract recipe using specific CSS selectors for table navigation."""
         try:
-            # ENHANCED: Use the correct CSS selector for recipe table
+            # Use the specific CSS selector for recipe table
+            # Target: #mw-content-text > div.mw-content-ltr.mw-parser-output > table
             recipe_table = soup.select_one('#mw-content-text > div.mw-content-ltr.mw-parser-output > table')
-            if not recipe_table:
-                # Fallback to section-based approach
-                recipe_section = self._find_section_by_pattern(soup, ['recipe', 'components'])
-                if recipe_section:
-                    recipe_table = recipe_section.find('table', style=lambda x: x and 'border-collapse' in x)
-                    if not recipe_table:
-                        recipe_table = recipe_section.find('table')
             
             if recipe_table:
-                return self._parse_hierarchical_recipe_table(recipe_table)
+                return self._parse_recipe_table_with_css(recipe_table)
             else:
                 # Fallback to simple component extraction from infobox
                 return self._extract_simple_recipe_fallback(soup)
             
         except Exception as e:
             self.logger.error(f"Error extracting recipe section: {e}")
+            return None
+
+    def _parse_recipe_table_with_css(self, table: Tag) -> Optional[Dict[str, Any]]:
+        """ENHANCED: Parse recipe table using specific CSS navigation to extract only names and prices."""
+        try:
+            recipe_data = {
+                'components': [],
+                'structured_format': []
+            }
+            
+            # Navigate the nested table structure
+            # Look for all div.item-icon.name elements in the table
+            item_divs = table.select('div.item-icon.name')
+            
+            for item_div in item_divs:
+                item_info = self._extract_item_name_and_price_css(item_div)
+                if item_info:
+                    recipe_data['components'].append(item_info)
+            
+            # Create structured format like: "Echoes of Helia - 2200(500)"
+            if recipe_data['components']:
+                for item in recipe_data['components']:
+                    name = item.get('name', 'Unknown')
+                    total_cost = item.get('total_cost')
+                    combine_cost = item.get('combine_cost')
+                    
+                    cost_str = ""
+                    if total_cost:
+                        cost_str = f" - {total_cost}"
+                        if combine_cost:
+                            cost_str += f"({combine_cost})"
+                    
+                    recipe_data['structured_format'].append(f"{name}{cost_str}")
+            
+            return recipe_data if recipe_data['components'] else None
+            
+        except Exception as e:
+            self.logger.error(f"Error parsing recipe table with CSS: {e}")
+            return None
+
+    def _extract_item_name_and_price_css(self, item_div: Tag) -> Optional[Dict[str, Any]]:
+        """Extract item name and price using specific CSS navigation."""
+        try:
+            item_info = {}
+            
+            # Extract item name from: div.item-icon.name > b > a
+            name_link = item_div.select_one('b > a')
+            if name_link:
+                item_info['name'] = name_link.get_text().strip()
+            elif item_div.find('b'):
+                # Fallback: just the bold text
+                item_info['name'] = item_div.find('b').get_text().strip()
+            
+            # Extract prices from the parent item div structure
+            # Look for the parent div.item that contains both name and gold info
+            parent_item_div = item_div.find_parent('div', class_='item')
+            if parent_item_div:
+                # Look for gold div with cost information
+                gold_div = parent_item_div.find('div', class_='gold')
+                if gold_div:
+                    # Extract costs from spans with white-space:normal style
+                    cost_spans = gold_div.find_all('span', style=lambda x: x and 'white-space:normal' in x)
+                    
+                    if cost_spans:
+                        # First span is usually total cost
+                        total_cost_text = cost_spans[0].get_text().strip()
+                        try:
+                            total_cost = int(total_cost_text)
+                            item_info['total_cost'] = total_cost
+                            
+                            # Look for combine cost in parentheses pattern
+                            gold_text = gold_div.get_text()
+                            combine_match = re.search(r'\((\d+)\)', gold_text)
+                            if combine_match:
+                                item_info['combine_cost'] = int(combine_match.group(1))
+                        except ValueError:
+                            pass
+            
+            return item_info if item_info.get('name') else None
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting item name and price: {e}")
             return None
 
     def _parse_hierarchical_recipe_table(self, table: Tag) -> Optional[Dict[str, Any]]:
@@ -1358,7 +1434,7 @@ class ItemDataScraper(BaseScraper):
                     pass
 
     def _extract_notes_section(self, soup: BeautifulSoup) -> Optional[Dict[str, Any]]:
-        """ENHANCED: Extract notes/gameplay information including map-specific differences."""
+        """ENHANCED: Extract notes using specific CSS selectors for accurate targeting."""
         try:
             notes_data = {
                 'gameplay_notes': [],
@@ -1366,43 +1442,42 @@ class ItemDataScraper(BaseScraper):
                 'map_specific_differences': {}
             }
             
-            # Extract main Notes section with generic item ability detection
-            notes_section = self._find_section_by_pattern(soup, ['notes', 'gameplay'])
-            if notes_section:
-                # ENHANCED: Extract any item ability mechanics (not hardcoded to Soul Siphon)
-                ability_notes = self._extract_item_ability_details(notes_section)
-                if ability_notes:
-                    notes_data['gameplay_notes'].extend(ability_notes)
+            # ENHANCED: Use specific CSS selector for notes UL elements
+            # Target: #mw-content-text > div.mw-content-ltr.mw-parser-output > ul
+            main_content = soup.select_one('#mw-content-text > div.mw-content-ltr.mw-parser-output')
+            if main_content:
+                # Find all UL elements in main content
+                ul_elements = main_content.find_all('ul', recursive=False)
                 
-                # Extract additional notes that weren't captured in ability details
-                note_lists = notes_section.find_all(['ul', 'ol'])
-                for note_list in note_lists:
-                    items = note_list.find_all('li')
-                    for item in items:
+                # Look for the UL that contains notes (usually comes after h2 with "Notes")
+                notes_ul = None
+                for i, element in enumerate(main_content.find_all(['h2', 'ul'])):
+                    if element.name == 'h2' and 'notes' in element.get_text().lower():
+                        # Find the next UL after the Notes heading
+                        for next_elem in element.find_next_siblings():
+                            if next_elem.name == 'ul':
+                                notes_ul = next_elem
+                                break
+                        break
+                
+                # If found, extract all li elements from the notes UL
+                if notes_ul:
+                    notes_items = notes_ul.find_all('li', recursive=False)
+                    for item in notes_items:
                         # Use merged text to handle fragmented spans
                         merged_text = self._merge_fragmented_text(item)
-                        if merged_text:
-                            # Skip if already captured in ability details
-                            if not any(existing in merged_text for existing in notes_data['gameplay_notes']):
-                                if any(keyword in merged_text.lower() for keyword in ['damage', 'heal', 'shield', 'effect', 'missile', 'projectile', 'trigger', 'stack']):
-                                    notes_data['gameplay_notes'].append(merged_text)
-                                else:
-                                    notes_data['interactions'].append(merged_text)
-                
-                # Extract from paragraphs
-                paragraphs = notes_section.find_all('p')
-                for para in paragraphs:
-                    # Use merged text to handle fragmented spans
-                    para_text = self._merge_fragmented_text(para)
-                    if para_text and len(para_text) > 10:
-                        # Skip if already captured in ability details
-                        if not any(existing in para_text for existing in notes_data['gameplay_notes']):
-                            notes_data['gameplay_notes'].append(para_text)
+                        if merged_text and len(merged_text.strip()) > 5:
+                            # Categorize notes based on content
+                            if any(keyword in merged_text.lower() for keyword in 
+                                   ['damage', 'heal', 'shield', 'effect', 'missile', 'projectile', 'trigger', 'stack', 'passive', 'active', 'unique']):
+                                notes_data['gameplay_notes'].append(merged_text.strip())
+                            else:
+                                notes_data['interactions'].append(merged_text.strip())
             
-            # ADDED: Extract Map-Specific Differences section
-            map_section = self._find_section_by_pattern(soup, ['map-specific differences', 'map differences'])
+            # ADDED: Extract Map-Specific Differences section using CSS selector
+            map_section = main_content.find('h2', string=lambda text: text and 'map-specific differences' in text.lower()) if main_content else None
             if map_section:
-                map_differences = self._extract_map_specific_differences(map_section)
+                map_differences = self._extract_map_specific_differences_css(main_content, map_section)
                 if map_differences:
                     notes_data['map_specific_differences'] = map_differences
             
@@ -1415,77 +1490,6 @@ class ItemDataScraper(BaseScraper):
             self.logger.error(f"Error extracting notes section: {e}")
             return None
 
-    def _extract_item_ability_details(self, notes_section: Tag) -> List[str]:
-        """ENHANCED: Extract detailed item ability mechanics from Notes section with span merging."""
-        try:
-            ability_notes = []
-            
-            # Common item ability keywords to look for
-            ability_keywords = [
-                'Soul Siphon', 'soul siphon',           # Echoes of Helia
-                'Starlit Grace', 'starlit grace',       # Moonstone Renewer  
-                'Immolate', 'immolate',                 # Sunfire items
-                'Unique', 'unique',                     # General unique passives
-                'Passive', 'passive',                   # Passive abilities
-                'Active', 'active',                     # Active abilities
-                'Mythic', 'mythic'                      # Mythic passives
-            ]
-            
-            # Look for lists containing item ability mechanics
-            note_lists = notes_section.find_all(['ul', 'ol'])
-            for note_list in note_lists:
-                items = note_list.find_all('li')
-                for item in items:
-                    # ENHANCED: Handle fragmented text across multiple spans
-                    merged_text = self._merge_fragmented_text(item)
-                    
-                    # Check if this note mentions any item ability mechanics
-                    if any(keyword in merged_text for keyword in ability_keywords):
-                        # Extract nested mechanics (sub-lists under ability items)
-                        nested_lists = item.find_all(['ul', 'ol'])
-                        if nested_lists:
-                            # Add main ability mechanic
-                            main_text = merged_text
-                            # Remove nested list text from main text
-                            for nested_list in nested_lists:
-                                nested_text = self._merge_fragmented_text(nested_list)
-                                main_text = main_text.replace(nested_text, '').strip()
-                            
-                            ability_notes.append(main_text)
-                            
-                            # Add nested mechanics as separate notes
-                            for nested_list in nested_lists:
-                                nested_items = nested_list.find_all('li')
-                                for nested_item in nested_items:
-                                    nested_text = self._merge_fragmented_text(nested_item)
-                                    if nested_text:
-                                        ability_notes.append(f"  • {nested_text}")
-                        else:
-                            # Simple ability note without nested mechanics
-                            ability_notes.append(merged_text)
-                    elif len(merged_text) > 30:
-                        # Include other significant gameplay notes (damage, healing, effects, etc.)
-                        gameplay_keywords = [
-                            'damage', 'heal', 'shield', 'effect', 'trigger', 'activate',
-                            'cooldown', 'stack', 'bonus', 'increased', 'decreased',
-                            'spell', 'ability', 'champion', 'enemy', 'ally'
-                        ]
-                        if any(keyword in merged_text.lower() for keyword in gameplay_keywords):
-                            ability_notes.append(merged_text)
-            
-            # Also check for ability details in paragraph text
-            paragraphs = notes_section.find_all('p')
-            for para in paragraphs:
-                para_text = self._merge_fragmented_text(para)
-                if (any(keyword in para_text for keyword in ability_keywords) and 
-                    len(para_text) > 20):
-                    ability_notes.append(para_text)
-            
-            return ability_notes
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting item ability details: {e}")
-            return []
 
     def _merge_fragmented_text(self, element: Tag) -> str:
         """Merge fragmented text across spans and elements to reconstruct complete sentences."""
@@ -1522,6 +1526,48 @@ class ItemDataScraper(BaseScraper):
         except Exception as e:
             self.logger.error(f"Error merging fragmented text: {e}")
             return element.get_text().strip() if element else ""
+    
+    def _extract_map_specific_differences_css(self, main_content: Tag, map_section: Tag) -> Optional[Dict[str, Any]]:
+        """Extract map-specific differences using CSS navigation."""
+        try:
+            map_differences = {}
+            
+            # Look for dl/dt elements after the map-specific differences heading
+            for next_elem in map_section.find_next_siblings():
+                if next_elem.name == 'dl':
+                    # Extract map-specific sections
+                    dt_elements = next_elem.find_all('dt')
+                    for dt in dt_elements:
+                        map_name_elem = dt.find(['a', 'span'])
+                        if map_name_elem:
+                            map_name = map_name_elem.get_text().strip()
+                            
+                            # Find associated dd or ul with differences
+                            differences = []
+                            next_sibling = dt.find_next_sibling()
+                            if next_sibling and next_sibling.name in ['dd', 'ul']:
+                                if next_sibling.name == 'ul':
+                                    items = next_sibling.find_all('li')
+                                    for item in items:
+                                        diff_text = self._merge_fragmented_text(item)
+                                        if diff_text:
+                                            differences.append(diff_text.strip())
+                                else:
+                                    diff_text = self._merge_fragmented_text(next_sibling)
+                                    if diff_text:
+                                        differences.append(diff_text.strip())
+                            
+                            if differences:
+                                map_differences[map_name] = differences
+                elif next_elem.name == 'h2':
+                    # Stop at next major section
+                    break
+            
+            return map_differences if map_differences else None
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting map-specific differences: {e}")
+            return None
     
     def _extract_map_specific_differences(self, section: Tag) -> Optional[Dict[str, Any]]:
         """Extract map-specific differences from the section."""
