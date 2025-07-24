@@ -479,68 +479,82 @@ class ItemDataScraper(BaseScraper):
 
     def _parse_website_format_stat(self, stat_text: str, tab_type: str) -> Optional[Dict[str, Any]]:
         """
-        FIXED: Parse stat text with correct HTML structure parsing.
+        FIXED: Parse stat text with readable structure for masterwork stats.
         Examples: 
-        - Base tab: "+35 ability power" -> {"name": "ability_power", "value": "35"}
-        - Masterwork tab: Extract total from red spans -> {"name": "ability_power", "value": "51.67"}
-        - Total tab: "+51.67 ability power" -> {"name": "ability_power", "value": "51.67"}
+        - Base tab: "+35 ability power" -> {"name": "ability_power", "value": "35.0"}
+        - Masterwork tab: "+35 (+16.67) ability power" -> {"name": "ability_power", "value": {"base": 35.0, "bonus": 16.67, "total": 51.67}}
         """
         try:
-            # FIXED: For masterwork tab, look for total values in red spans
-            if tab_type == 'masterwork':
-                # HTML structure: "+35 <span style="color: #E34D4C">(+16.67)</span> ability power"
-                # We want to extract the total: 35 + 16.67 = 51.67
-                
-                # Extract base value
-                base_match = re.match(r'([+-]?\d+(?:\.\d+)?)', stat_text.strip())
-                if not base_match:
-                    return None
-                
-                base_value = float(base_match.group(1))
-                
-                # Extract bonus value from parentheses (if exists)
-                bonus_match = re.search(r'\(\+?([+-]?\d+(?:\.\d+)?)\)', stat_text)
-                if bonus_match:
-                    bonus_value = float(bonus_match.group(1))
-                    total_value = base_value + bonus_value
-                else:
-                    total_value = base_value
-                
-                # Extract stat name (everything after the last number/parentheses)
-                stat_name_match = re.search(r'(?:\([^)]*\))?\s*(.+)$', stat_text)
-                if stat_name_match:
-                    stat_name = stat_name_match.group(1).strip()
-                else:
-                    # Fallback: extract everything after base value
-                    stat_name = re.sub(r'^[+-]?\d+(?:\.\d+)?(?:\s*\([^)]*\))?\s*', '', stat_text).strip()
-                
-                formatted_value = str(total_value) if total_value == int(total_value) else f"{total_value:.2f}"
-                
+            # Extract base value
+            base_match = re.match(r'([+-]?\d+(?:\.\d+)?)', stat_text.strip())
+            if not base_match:
+                return None
+            
+            base_value = float(base_match.group(1))
+            
+            # Extract stat name (everything after the last number/parentheses)
+            stat_name_pattern = r'(?:\([^)]*\))?\s*(.+)$'
+            stat_name_match = re.search(stat_name_pattern, stat_text)
+            if stat_name_match:
+                stat_name = stat_name_match.group(1).strip()
             else:
-                # For base and total tabs, extract normally
-                pattern = r'([+-]?\d+(?:\.\d+)?)\s*(.+)'
-                match = re.match(pattern, stat_text.strip())
-                
-                if not match:
-                    return None
-                    
-                value_str, stat_name = match.groups()
-                base_value = float(value_str)
-                formatted_value = str(base_value) if base_value == int(base_value) else f"{base_value:.2f}"
+                # Fallback: extract everything after base value
+                stat_name = re.sub(r'^[+-]?\d+(?:\.\d+)?(?:\s*\([^)]*\))?\s*', '', stat_text).strip()
             
             # Clean stat name
             stat_name = stat_name.strip().lower()
             stat_name = re.sub(r'[^\w\s%]', '', stat_name)  # Keep % for percentages
             stat_name = stat_name.replace(' ', '_')
             
-            # Handle percentage stats specially
-            if '%' in stat_text:
-                if not formatted_value.endswith('%'):
+            # FIXED: For masterwork tab, create structured object with base/bonus/total
+            if tab_type == 'masterwork':
+                # Extract bonus value from parentheses (if exists)
+                bonus_match = re.search(r'\(\+?([+-]?\d+(?:\.\d+)?)\)', stat_text)
+                if bonus_match:
+                    bonus_value = float(bonus_match.group(1))
+                    total_value = base_value + bonus_value
+                    
+                    # Return structured masterwork stats
+                    stat_value = {
+                        "base": base_value,
+                        "bonus": bonus_value,
+                        "total": total_value
+                    }
+                    
+                    # Handle percentage stats
+                    if '%' in stat_text:
+                        stat_value = {
+                            "base": f"{base_value}%",
+                            "bonus": f"{bonus_value}%",
+                            "total": f"{total_value}%"
+                        }
+                else:
+                    # No bonus, just base value
+                    stat_value = {
+                        "base": base_value,
+                        "bonus": 0.0,
+                        "total": base_value
+                    }
+                    
+                    if '%' in stat_text:
+                        stat_value = {
+                            "base": f"{base_value}%",
+                            "bonus": "0%",
+                            "total": f"{base_value}%"
+                        }
+            else:
+                # For base and total tabs, return simple value
+                formatted_value = str(base_value) if base_value == int(base_value) else f"{base_value:.1f}"
+                
+                # Handle percentage stats
+                if '%' in stat_text:
                     formatted_value += '%'
+                
+                stat_value = formatted_value
             
             return {
                 'name': stat_name,
-                'value': formatted_value
+                'value': stat_value
             }
             
         except Exception as e:
@@ -654,7 +668,7 @@ class ItemDataScraper(BaseScraper):
             return None
 
     def _parse_recipe_table_with_css(self, table: Tag) -> Optional[Dict[str, Any]]:
-        """ENHANCED: Parse recipe table using specific CSS navigation to extract only names and prices."""
+        """FIXED: Parse recipe table with deduplication and hierarchy."""
         try:
             recipe_data = {
                 'components': [],
@@ -662,34 +676,105 @@ class ItemDataScraper(BaseScraper):
             }
             
             # Navigate the nested table structure
-            # Look for all div.item-icon.name elements in the table
             item_divs = table.select('div.item-icon.name')
             
+            # Extract all items first
+            all_items = []
             for item_div in item_divs:
                 item_info = self._extract_item_name_and_price_css(item_div)
                 if item_info:
-                    recipe_data['components'].append(item_info)
+                    all_items.append(item_info)
             
-            # Create structured format like: "Echoes of Helia - 2200(500)"
-            if recipe_data['components']:
-                for item in recipe_data['components']:
-                    name = item.get('name', 'Unknown')
-                    total_cost = item.get('total_cost')
-                    combine_cost = item.get('combine_cost')
-                    
-                    cost_str = ""
-                    if total_cost:
-                        cost_str = f" - {total_cost}"
-                        if combine_cost:
-                            cost_str += f"({combine_cost})"
-                    
-                    recipe_data['structured_format'].append(f"{name}{cost_str}")
+            if not all_items:
+                return None
+            
+            # FIXED: Identify and filter out main item
+            main_item = self._identify_main_item(all_items)
+            components = [item for item in all_items if item.get('name') != main_item.get('name')]
+            
+            # FIXED: Deduplicate components by name
+            seen_names = set()
+            unique_components = []
+            for component in components:
+                name = component.get('name')
+                if name and name not in seen_names:
+                    unique_components.append(component)
+                    seen_names.add(name)
+            
+            recipe_data['components'] = unique_components
+            
+            # FIXED: Create hierarchical structure
+            if main_item and unique_components:
+                hierarchy = self._build_recipe_hierarchy(main_item, unique_components)
+                recipe_data['structured_format'] = hierarchy
             
             return recipe_data if recipe_data['components'] else None
             
         except Exception as e:
             self.logger.error(f"Error parsing recipe table with CSS: {e}")
             return None
+
+    def _identify_main_item(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Identify the main item (highest cost or has combine cost)."""
+        try:
+            if not items:
+                return {}
+            
+            # Find item with highest total cost
+            main_item = max(items, key=lambda x: x.get('total_cost', 0))
+            
+            # Prefer items with combine cost (indicates it's built from components)
+            for item in items:
+                if item.get('combine_cost') and item.get('total_cost', 0) >= main_item.get('total_cost', 0):
+                    main_item = item
+                    break
+            
+            return main_item
+            
+        except Exception as e:
+            self.logger.error(f"Error identifying main item: {e}")
+            return items[0] if items else {}
+
+    def _build_recipe_hierarchy(self, main_item: Dict[str, Any], components: List[Dict[str, Any]]) -> List[str]:
+        """Build hierarchical recipe format."""
+        try:
+            hierarchy = []
+            
+            # Add main item
+            main_name = main_item.get('name', 'Unknown')
+            main_cost = main_item.get('total_cost')
+            main_combine = main_item.get('combine_cost')
+            
+            cost_str = ""
+            if main_cost:
+                cost_str = f" - {main_cost}"
+                if main_combine:
+                    cost_str += f"({main_combine})"
+            
+            hierarchy.append(f"{main_name}{cost_str}")
+            
+            # Sort components by cost (highest first for logical ordering)
+            components.sort(key=lambda x: x.get('total_cost', 0), reverse=True)
+            
+            # Add components with indentation
+            for component in components:
+                name = component.get('name', 'Unknown')
+                cost = component.get('total_cost')
+                combine = component.get('combine_cost')
+                
+                cost_str = ""
+                if cost:
+                    cost_str = f" - {cost}"
+                    if combine:
+                        cost_str += f"({combine})"
+                
+                hierarchy.append(f"  {name}{cost_str}")
+            
+            return hierarchy
+            
+        except Exception as e:
+            self.logger.error(f"Error building recipe hierarchy: {e}")
+            return []
 
     def _extract_item_name_and_price_css(self, item_div: Tag) -> Optional[Dict[str, Any]]:
         """Extract item name and price using specific CSS navigation."""
@@ -1492,33 +1577,16 @@ class ItemDataScraper(BaseScraper):
 
 
     def _merge_fragmented_text(self, element: Tag) -> str:
-        """Merge fragmented text across spans and elements to reconstruct complete sentences."""
+        """FIXED: Merge fragmented text across spans without duplicates."""
         try:
-            # Get all text nodes and spans within the element
-            text_parts = []
-            
-            for content in element.descendants:
-                if content.name is None:  # Text node
-                    text = str(content).strip()
-                    if text and text not in ['"', "'", ' ', '\n', '\t']:
-                        text_parts.append(text)
-                elif content.name in ['b', 'i', 'em', 'strong']:
-                    # Handle bold/italic formatting
-                    inner_text = content.get_text().strip()
-                    if inner_text:
-                        text_parts.append(inner_text)
-                elif content.name == 'span':
-                    # Handle spans - check if they contain meaningful text
-                    span_text = content.get_text().strip()
-                    if span_text and len(span_text) > 1:
-                        text_parts.append(span_text)
-            
-            # Join text parts and clean up
-            merged_text = ' '.join(text_parts)
+            # Use BeautifulSoup's get_text() with separator to avoid duplicates
+            # This handles nested elements automatically without manual traversal
+            merged_text = element.get_text(separator=' ', strip=True)
             
             # Clean up extra whitespace and formatting
             merged_text = re.sub(r'\s+', ' ', merged_text)
             merged_text = merged_text.replace(' "', '"').replace('" ', '"')
+            merged_text = merged_text.replace(' .', '.').replace(' ,', ',')
             merged_text = merged_text.strip()
             
             return merged_text
