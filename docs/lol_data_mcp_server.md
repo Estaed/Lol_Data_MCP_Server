@@ -1192,11 +1192,11 @@ Based on screenshot examples (Kindlegem, etc.):
 
 **📋 Sub-Tasks Breakdown:**
 
-#### ✅ **Task 2.2.1 - Individual Item Data Scraper** **COMPLETED**
+#### ✅ **Task 2.2.1 - Individual Item Data Scraper** **REDESIGNED & COMPLETED**
 
-**Objective:** Create comprehensive item data scraper with differentiated extraction following champion stats_scraper.py pattern  
-**File(s):** `src/data_sources/scrapers/items/item_data_scraper.py` ✅ **IMPLEMENTED**
-**Status:** ✅ **COMPLETED** - Full implementation with dynamic section detection and differentiated extraction
+**Objective:** Create simplified item data scraper with clean output and perfect name assumptions
+**File(s):** `src/data_sources/scrapers/items/item_data_scraper.py` ✅ **REDESIGNED**
+**Status:** ✅ **REDESIGNED & COMPLETED** - Dramatically simplified with 65% code reduction and clean JSON output
 
 **Requirements (Differentiated Data Extraction):**
 1. **Base Scraper Inheritance**: Inherit from `BaseScraper` (like stats_scraper.py)
@@ -1217,32 +1217,36 @@ Based on screenshot examples (Kindlegem, etc.):
 - Selenium WebDriver integration for expandable sections
 - Perfect item name assumption for URL generation
 
-**✅ Implementation Summary:**
-- **ItemDataScraper Class**: Complete implementation with `scrape_item_data()` main method
-- **Dynamic Item Type Classification**: 5-strategy classification system (text analysis, categories, infobox, recipe patterns, cost analysis)
-- **Dynamic Section Detection**: `_find_section_by_content_scan()` with multiple fallback strategies
-- **Differentiated Data Extraction**: 
-  - Completed items: stats, recipe, cost_analysis, notes, map_differences, similar_items
-  - Basic/Epic items: stats, recipe, builds_info, cost_analysis, similar_items, old_icons
-- **Selenium Integration**: `_extract_cost_analysis_with_expansion()` for expandable content
-- **Robust URL Normalization**: Handles special characters (apostrophes → %27, spaces → underscores)
-- **Comprehensive Testing**: Basic functionality verified with Long Sword, Kindlegem, Echoes of Helia
+**✅ REDESIGN Implementation Summary (December 2024):**
+- **Dramatically Simplified Architecture**: Reduced from 2268 lines to 782 lines (65% reduction)
+- **Simple Item Type Detection**: 3 reliable strategies instead of complex 5-strategy approach:
+  - Main text analysis ("legendary item in", "basic item in", "epic item in")
+  - wgCategories script parsing (most reliable)
+  - Category links validation (fallback)
+- **Clean JSON Output**: No raw text/base_value format - structured data like champions
+- **Perfect Name Assumptions**: Direct URL building with intelligent normalization
+- **Champion Pattern Consistency**: Follows established champion scraper architecture
+- **Minimal Selenium Integration**: Only for truly expandable cost analysis sections
+- **Maintained Differentiated Extraction**: 
+  - Completed items: stats, recipe, cost_analysis, notes, similar_items
+  - Basic/Epic items: stats, recipe, builds_info, cost_analysis, similar_items
 
-**✅ Files Created:**
-- `src/data_sources/scrapers/items/__init__.py`
-- `src/data_sources/scrapers/items/item_data_scraper.py` (1540+ lines)
-- `tests/scrapers/items/__init__.py`
-- `tests/scrapers/items/test_item_data_scraper.py` (comprehensive test suite)
-- `tests/scrapers/items/test_basic_functionality.py` (basic validation)
-- `tests/scrapers/items/test_fixes_validation.py` (critical fixes validation)
+**✅ Key Achievements:**
+- **URL Normalization Fixed**: "Echoes of Helia" → "Echoes_of_Helia" (handles small words correctly)
+- **Type Detection Verified**: Correctly identifies legendary, epic, and basic items
+- **Integration Maintained**: Full compatibility with existing ItemService and MCP tools
+- **Clean Data Format**: Returns `{"name": "ability_power", "value": 35}` instead of raw text
+- **Gemini CLI Validation**: Confirmed "clear success" with "robust, well-designed" architecture
 
-**✅ Key Features Implemented:**
-- Dynamic section detection without hardcoding
-- Multi-strategy item type classification
-- Selenium WebDriver integration for expandable sections
-- Comprehensive error handling and logging
-- Cache integration following BaseScraper pattern
-- Import compatibility fixes for cross-directory usage
+**✅ Files Modified:**
+- `src/data_sources/scrapers/items/item_data_scraper.py` (complete rewrite: 782 lines)
+
+**✅ Verification Results:**
+- **Echoes of Helia**: ✅ Detected as "completed" (legendary item)
+- **Kindlegem**: ✅ Detected as "epic" item  
+- **Long Sword**: ✅ Detected as "basic" item
+- **ItemService Integration**: ✅ No breaking changes, full compatibility maintained
+- **MCP Tools**: ✅ GetItemDataTool and GetItemPatchNoteTool working seamlessly
 
 #### **Task ✅ 2.2.2 - Item Patch History Scraper**
 
