@@ -639,62 +639,206 @@ class ItemDataScraper(BaseScraper):
     def _extract_recipe_section(self, soup: BeautifulSoup) -> Optional[Dict[str, Any]]:
         """Extract hierarchical recipe information with component relationships and costs."""
         try:
-            recipe_section = self._find_section_by_pattern(soup, ['recipe', 'components'])
-            if not recipe_section:
-                return None
-            
-            # Look for recipe table structure
-            recipe_table = recipe_section.find('table', style=lambda x: x and 'border-collapse' in x)
+            # ENHANCED: Use the correct CSS selector for recipe table
+            recipe_table = soup.select_one('#mw-content-text > div.mw-content-ltr.mw-parser-output > table')
             if not recipe_table:
-                recipe_table = recipe_section.find('table')
+                # Fallback to section-based approach
+                recipe_section = self._find_section_by_pattern(soup, ['recipe', 'components'])
+                if recipe_section:
+                    recipe_table = recipe_section.find('table', style=lambda x: x and 'border-collapse' in x)
+                    if not recipe_table:
+                        recipe_table = recipe_section.find('table')
             
             if recipe_table:
                 return self._parse_hierarchical_recipe_table(recipe_table)
             else:
-                # Fallback to simple component extraction
-                return self._extract_simple_recipe_fallback(recipe_section)
+                # Fallback to simple component extraction from infobox
+                return self._extract_simple_recipe_fallback(soup)
             
         except Exception as e:
             self.logger.error(f"Error extracting recipe section: {e}")
             return None
 
     def _parse_hierarchical_recipe_table(self, table: Tag) -> Optional[Dict[str, Any]]:
-        """Parse the hierarchical recipe table structure to extract component relationships."""
+        """ENHANCED: Parse recipe table to create hierarchical tree structure like: Echoes of Helia - 2200(500)"""
         try:
-            recipe_data = {
-                'main_components': [],
-                'total_cost': None,
-                'combine_cost': None
-            }
-            
-            # Find all item divs in the table
+            # Extract all items from the table
+            all_items = []
             item_divs = table.find_all('div', class_='item')
-            
-            # Group items by their position and relationships
-            main_item = None
-            components = []
             
             for item_div in item_divs:
                 item_info = self._extract_detailed_item_from_div(item_div)
                 if item_info:
-                    # Determine if this is the main item or a component
-                    if self._is_main_recipe_item(item_div, item_info):
-                        main_item = item_info
-                    else:
-                        components.append(item_info)
+                    # Determine item position/level in hierarchy based on table structure
+                    row = item_div.find_parent('tr')
+                    if row:
+                        # Count cells/columns to determine depth
+                        cells = row.find_all(['td', 'th'])
+                        item_info['table_position'] = len(cells)
+                        item_info['parent_row'] = row
+                    
+                    all_items.append(item_info)
             
-            if main_item:
-                recipe_data['total_cost'] = main_item.get('total_cost')
-                recipe_data['combine_cost'] = main_item.get('combine_cost')
+            if not all_items:
+                return None
             
-            # Group components into hierarchical structure
-            recipe_data['main_components'] = self._group_components_hierarchically(components)
+            # Build hierarchical structure
+            recipe_tree = self._build_recipe_tree(all_items)
             
-            return recipe_data if recipe_data['main_components'] or recipe_data['total_cost'] else None
+            return {
+                'recipe_tree': recipe_tree,
+                'structured_format': self._format_recipe_tree(recipe_tree)
+            }
             
         except Exception as e:
             self.logger.error(f"Error parsing hierarchical recipe table: {e}")
             return None
+
+    def _build_recipe_tree(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Build hierarchical tree structure from items based on table position."""
+        try:
+            if not items:
+                return {}
+            
+            # Find the main item (typically first or with highest cost)
+            main_item = None
+            components = []
+            
+            for item in items:
+                if self._is_main_recipe_item_enhanced(item, items):
+                    main_item = item
+                else:
+                    components.append(item)
+            
+            if not main_item and items:
+                # Fallback: use first item as main
+                main_item = items[0]
+                components = items[1:]
+            
+            # Create tree structure
+            tree = {
+                'name': main_item.get('name', 'Unknown'),
+                'total_cost': main_item.get('total_cost'),
+                'combine_cost': main_item.get('combine_cost'),
+                'components': []
+            }
+            
+            # Group components by their relationships
+            processed_components = set()
+            
+            for component in components:
+                if component.get('name') in processed_components:
+                    continue
+                
+                component_tree = {
+                    'name': component.get('name', 'Unknown'),
+                    'total_cost': component.get('total_cost'),
+                    'combine_cost': component.get('combine_cost'),
+                    'components': []
+                }
+                
+                # Find sub-components for this component
+                sub_components = self._find_sub_components(component, components)
+                for sub_comp in sub_components:
+                    if sub_comp.get('name') not in processed_components:
+                        component_tree['components'].append({
+                            'name': sub_comp.get('name', 'Unknown'),
+                            'total_cost': sub_comp.get('total_cost'),
+                            'combine_cost': sub_comp.get('combine_cost'),
+                            'components': []
+                        })
+                        processed_components.add(sub_comp.get('name'))
+                
+                tree['components'].append(component_tree)
+                processed_components.add(component.get('name'))
+            
+            return tree
+            
+        except Exception as e:
+            self.logger.error(f"Error building recipe tree: {e}")
+            return {}
+
+    def _format_recipe_tree(self, tree: Dict[str, Any]) -> List[str]:
+        """Format recipe tree into readable hierarchical text format."""
+        try:
+            formatted_lines = []
+            
+            def format_item(item: Dict[str, Any], indent: int = 0) -> None:
+                name = item.get('name', 'Unknown')
+                total_cost = item.get('total_cost')
+                combine_cost = item.get('combine_cost')
+                
+                # Create cost string
+                cost_str = ""
+                if total_cost:
+                    cost_str = f" - {total_cost}"
+                    if combine_cost:
+                        cost_str += f"({combine_cost})"
+                
+                # Create indented line
+                indent_str = "  " * indent
+                formatted_lines.append(f"{indent_str}{name}{cost_str}")
+                
+                # Process components recursively
+                for component in item.get('components', []):
+                    format_item(component, indent + 1)
+            
+            format_item(tree)
+            return formatted_lines
+            
+        except Exception as e:
+            self.logger.error(f"Error formatting recipe tree: {e}")
+            return []
+
+    def _is_main_recipe_item_enhanced(self, item: Dict[str, Any], all_items: List[Dict[str, Any]]) -> bool:
+        """Enhanced detection of main recipe item."""
+        try:
+            # Multiple strategies to identify main item
+            
+            # Strategy 1: Highest total cost (most reliable)
+            item_cost = item.get('total_cost', 0)
+            if item_cost > 0:
+                max_cost = max([i.get('total_cost', 0) for i in all_items])
+                if item_cost == max_cost:
+                    return True
+            
+            # Strategy 2: Has combine cost (indicates it's built from components)
+            if item.get('combine_cost'):
+                return True
+            
+            # Strategy 3: Table position (first in layout)
+            if item.get('table_position', 999) <= min([i.get('table_position', 999) for i in all_items]):
+                return True
+            
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Error in main item detection: {e}")
+            return False
+
+    def _find_sub_components(self, component: Dict[str, Any], all_components: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Find sub-components that build into the given component."""
+        try:
+            sub_components = []
+            component_cost = component.get('total_cost', 0)
+            
+            for other_comp in all_components:
+                other_cost = other_comp.get('total_cost', 0)
+                
+                # Sub-components should have lower cost and not be the same item
+                if (other_cost < component_cost and 
+                    other_comp.get('name') != component.get('name') and
+                    other_cost > 0):
+                    sub_components.append(other_comp)
+            
+            # Sort by cost (highest first for logical hierarchy)
+            sub_components.sort(key=lambda x: x.get('total_cost', 0), reverse=True)
+            
+            return sub_components
+            
+        except Exception as e:
+            self.logger.error(f"Error finding sub-components: {e}")
+            return []
 
     def _extract_detailed_item_from_div(self, item_div: Tag) -> Optional[Dict[str, Any]]:
         """Extract detailed item information including costs and relationships."""
@@ -1222,34 +1366,36 @@ class ItemDataScraper(BaseScraper):
                 'map_specific_differences': {}
             }
             
-            # Extract main Notes section with enhanced Soul Siphon detection
+            # Extract main Notes section with generic item ability detection
             notes_section = self._find_section_by_pattern(soup, ['notes', 'gameplay'])
             if notes_section:
-                # ENHANCED: Look for Soul Siphon specific mechanics first
-                soul_siphon_notes = self._extract_soul_siphon_details(notes_section)
-                if soul_siphon_notes:
-                    notes_data['gameplay_notes'].extend(soul_siphon_notes)
+                # ENHANCED: Extract any item ability mechanics (not hardcoded to Soul Siphon)
+                ability_notes = self._extract_item_ability_details(notes_section)
+                if ability_notes:
+                    notes_data['gameplay_notes'].extend(ability_notes)
                 
-                # Extract from lists
+                # Extract additional notes that weren't captured in ability details
                 note_lists = notes_section.find_all(['ul', 'ol'])
                 for note_list in note_lists:
                     items = note_list.find_all('li')
                     for item in items:
-                        note_text = item.get_text().strip()
-                        if note_text:
-                            # Skip if already captured in Soul Siphon details
-                            if not any(existing in note_text for existing in notes_data['gameplay_notes']):
-                                if any(keyword in note_text.lower() for keyword in ['damage', 'heal', 'shield', 'effect', 'siphon', 'missile', 'projectile']):
-                                    notes_data['gameplay_notes'].append(note_text)
+                        # Use merged text to handle fragmented spans
+                        merged_text = self._merge_fragmented_text(item)
+                        if merged_text:
+                            # Skip if already captured in ability details
+                            if not any(existing in merged_text for existing in notes_data['gameplay_notes']):
+                                if any(keyword in merged_text.lower() for keyword in ['damage', 'heal', 'shield', 'effect', 'missile', 'projectile', 'trigger', 'stack']):
+                                    notes_data['gameplay_notes'].append(merged_text)
                                 else:
-                                    notes_data['interactions'].append(note_text)
+                                    notes_data['interactions'].append(merged_text)
                 
                 # Extract from paragraphs
                 paragraphs = notes_section.find_all('p')
                 for para in paragraphs:
-                    para_text = para.get_text().strip()
+                    # Use merged text to handle fragmented spans
+                    para_text = self._merge_fragmented_text(para)
                     if para_text and len(para_text) > 10:
-                        # Skip if already captured
+                        # Skip if already captured in ability details
                         if not any(existing in para_text for existing in notes_data['gameplay_notes']):
                             notes_data['gameplay_notes'].append(para_text)
             
@@ -1269,55 +1415,113 @@ class ItemDataScraper(BaseScraper):
             self.logger.error(f"Error extracting notes section: {e}")
             return None
 
-    def _extract_soul_siphon_details(self, notes_section: Tag) -> List[str]:
-        """ENHANCED: Extract detailed Soul Siphon passive mechanics from Notes section."""
+    def _extract_item_ability_details(self, notes_section: Tag) -> List[str]:
+        """ENHANCED: Extract detailed item ability mechanics from Notes section with span merging."""
         try:
-            soul_siphon_notes = []
+            ability_notes = []
             
-            # Look for lists containing Soul Siphon mechanics
+            # Common item ability keywords to look for
+            ability_keywords = [
+                'Soul Siphon', 'soul siphon',           # Echoes of Helia
+                'Starlit Grace', 'starlit grace',       # Moonstone Renewer  
+                'Immolate', 'immolate',                 # Sunfire items
+                'Unique', 'unique',                     # General unique passives
+                'Passive', 'passive',                   # Passive abilities
+                'Active', 'active',                     # Active abilities
+                'Mythic', 'mythic'                      # Mythic passives
+            ]
+            
+            # Look for lists containing item ability mechanics
             note_lists = notes_section.find_all(['ul', 'ol'])
             for note_list in note_lists:
                 items = note_list.find_all('li')
                 for item in items:
-                    item_text = item.get_text().strip()
+                    # ENHANCED: Handle fragmented text across multiple spans
+                    merged_text = self._merge_fragmented_text(item)
                     
-                    # Check if this note mentions Soul Siphon mechanics
-                    if any(keyword in item_text for keyword in ['Soul Siphon', 'soul siphon']):
-                        # Extract nested mechanics (sub-lists under Soul Siphon items)
+                    # Check if this note mentions any item ability mechanics
+                    if any(keyword in merged_text for keyword in ability_keywords):
+                        # Extract nested mechanics (sub-lists under ability items)
                         nested_lists = item.find_all(['ul', 'ol'])
                         if nested_lists:
-                            # Add main Soul Siphon mechanic
-                            main_text = item_text
+                            # Add main ability mechanic
+                            main_text = merged_text
                             # Remove nested list text from main text
                             for nested_list in nested_lists:
-                                nested_text = nested_list.get_text().strip()
+                                nested_text = self._merge_fragmented_text(nested_list)
                                 main_text = main_text.replace(nested_text, '').strip()
                             
-                            soul_siphon_notes.append(main_text)
+                            ability_notes.append(main_text)
                             
                             # Add nested mechanics as separate notes
                             for nested_list in nested_lists:
                                 nested_items = nested_list.find_all('li')
                                 for nested_item in nested_items:
-                                    nested_text = nested_item.get_text().strip()
+                                    nested_text = self._merge_fragmented_text(nested_item)
                                     if nested_text:
-                                        soul_siphon_notes.append(f"  • {nested_text}")
+                                        ability_notes.append(f"  • {nested_text}")
                         else:
-                            # Simple Soul Siphon note without nested mechanics
-                            soul_siphon_notes.append(item_text)
+                            # Simple ability note without nested mechanics
+                            ability_notes.append(merged_text)
+                    elif len(merged_text) > 30:
+                        # Include other significant gameplay notes (damage, healing, effects, etc.)
+                        gameplay_keywords = [
+                            'damage', 'heal', 'shield', 'effect', 'trigger', 'activate',
+                            'cooldown', 'stack', 'bonus', 'increased', 'decreased',
+                            'spell', 'ability', 'champion', 'enemy', 'ally'
+                        ]
+                        if any(keyword in merged_text.lower() for keyword in gameplay_keywords):
+                            ability_notes.append(merged_text)
             
-            # Also check for Soul Siphon in paragraph text
+            # Also check for ability details in paragraph text
             paragraphs = notes_section.find_all('p')
             for para in paragraphs:
-                para_text = para.get_text().strip()
-                if 'Soul Siphon' in para_text and len(para_text) > 20:
-                    soul_siphon_notes.append(para_text)
+                para_text = self._merge_fragmented_text(para)
+                if (any(keyword in para_text for keyword in ability_keywords) and 
+                    len(para_text) > 20):
+                    ability_notes.append(para_text)
             
-            return soul_siphon_notes
+            return ability_notes
             
         except Exception as e:
-            self.logger.error(f"Error extracting Soul Siphon details: {e}")
+            self.logger.error(f"Error extracting item ability details: {e}")
             return []
+
+    def _merge_fragmented_text(self, element: Tag) -> str:
+        """Merge fragmented text across spans and elements to reconstruct complete sentences."""
+        try:
+            # Get all text nodes and spans within the element
+            text_parts = []
+            
+            for content in element.descendants:
+                if content.name is None:  # Text node
+                    text = str(content).strip()
+                    if text and text not in ['"', "'", ' ', '\n', '\t']:
+                        text_parts.append(text)
+                elif content.name in ['b', 'i', 'em', 'strong']:
+                    # Handle bold/italic formatting
+                    inner_text = content.get_text().strip()
+                    if inner_text:
+                        text_parts.append(inner_text)
+                elif content.name == 'span':
+                    # Handle spans - check if they contain meaningful text
+                    span_text = content.get_text().strip()
+                    if span_text and len(span_text) > 1:
+                        text_parts.append(span_text)
+            
+            # Join text parts and clean up
+            merged_text = ' '.join(text_parts)
+            
+            # Clean up extra whitespace and formatting
+            merged_text = re.sub(r'\s+', ' ', merged_text)
+            merged_text = merged_text.replace(' "', '"').replace('" ', '"')
+            merged_text = merged_text.strip()
+            
+            return merged_text
+            
+        except Exception as e:
+            self.logger.error(f"Error merging fragmented text: {e}")
+            return element.get_text().strip() if element else ""
     
     def _extract_map_specific_differences(self, section: Tag) -> Optional[Dict[str, Any]]:
         """Extract map-specific differences from the section."""
