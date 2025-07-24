@@ -614,14 +614,41 @@ class ItemDataScraper(BaseScraper):
                     parts = passive_text.split(':', 1)
                     return {
                         'name': parts[0].strip(),
-                        'description': parts[1].strip()
+                        'description': self._format_description(parts[1].strip())
                     }
             
-            return {'description': passive_text}
+            return {'description': self._format_description(passive_text)}
             
         except Exception as e:
             self.logger.error(f"Error extracting passive ability: {e}")
             return None
+
+    def _format_description(self, description: str) -> str:
+        """ENHANCED: Format description text with proper sentence splitting and spacing."""
+        try:
+            if not description:
+                return description
+            
+            # Clean up extra whitespace
+            description = re.sub(r'\s+', ' ', description).strip()
+            
+            # FIXED: Split numbered points into separate sentences
+            # Look for patterns like "2. Healing" and split them
+            description = re.sub(r'(\d+)\.\s*([A-Z])', r'. \2', description)
+            
+            # Fix spacing around punctuation
+            description = re.sub(r'\s+([.,:;!?])', r'\1', description)  # Remove space before punctuation
+            description = re.sub(r'([.!?])([A-Z])', r'\1 \2', description)  # Add space after sentence end
+            
+            # Fix specific patterns
+            description = description.replace('  ', ' ')  # Remove double spaces
+            description = description.replace(' .', '.')  # Fix spaced periods
+            
+            return description.strip()
+            
+        except Exception as e:
+            self.logger.error(f"Error formatting description: {e}")
+            return description
 
     def _extract_cost_sell_info(self, infobox: Tag) -> Optional[Dict[str, Any]]:
         """Extract cost and sell information."""
@@ -664,20 +691,19 @@ class ItemDataScraper(BaseScraper):
                 return self._parse_recipe_table_with_css(recipe_table)
             else:
                 # Fallback to simple component extraction from infobox
-                return self._extract_simple_recipe_fallback(soup)
+                fallback_recipe = self._extract_simple_recipe_fallback(soup)
+                # Convert fallback to simple list format for consistency
+                if fallback_recipe and isinstance(fallback_recipe, dict):
+                    return fallback_recipe.get('structured_format', fallback_recipe.get('components', []))
+                return fallback_recipe
             
         except Exception as e:
             self.logger.error(f"Error extracting recipe section: {e}")
             return None
 
-    def _parse_recipe_table_with_css(self, table: Tag) -> Optional[Dict[str, Any]]:
-        """FIXED: Parse recipe table with deduplication and hierarchy."""
+    def _parse_recipe_table_with_css(self, table: Tag) -> Optional[List[str]]:
+        """FIXED: Parse recipe table and return only hierarchical structure."""
         try:
-            recipe_data = {
-                'components': [],
-                'structured_format': []
-            }
-            
             # Navigate the nested table structure
             item_divs = table.select('div.item-icon.name')
             
@@ -704,14 +730,12 @@ class ItemDataScraper(BaseScraper):
                     unique_components.append(component)
                     seen_names.add(name)
             
-            recipe_data['components'] = unique_components
-            
-            # FIXED: Create hierarchical structure
+            # FIXED: Create hierarchical structure and return only this
             if main_item and unique_components:
                 hierarchy = self._build_recipe_hierarchy(main_item, unique_components)
-                recipe_data['structured_format'] = hierarchy
+                return hierarchy
             
-            return recipe_data if recipe_data['components'] else None
+            return None
             
         except Exception as e:
             self.logger.error(f"Error parsing recipe table with CSS: {e}")
@@ -1296,18 +1320,15 @@ class ItemDataScraper(BaseScraper):
             self.logger.error(f"Error extracting builds info: {e}")
             return None
 
-    async def _extract_cost_analysis(self, soup: BeautifulSoup, url: str) -> Optional[Dict[str, Any]]:
-        """
-        Extract cost analysis with minimal Selenium integration if needed.
-        First tries static HTML, then uses Selenium for expandable sections.
-        """
+    async def _extract_cost_analysis(self, soup: BeautifulSoup, url: str) -> Optional[str]:
+        """SIMPLIFIED: Extract only gold efficiency statement."""
         try:
             # Try static extraction first
             cost_section = self._find_section_by_pattern(soup, ['cost analysis', 'gold efficiency'])
             if cost_section:
-                cost_data = self._parse_cost_data(cost_section)
-                if cost_data and self._is_cost_data_complete(cost_data):
-                    return cost_data
+                efficiency_text = self._extract_gold_efficiency_statement(cost_section)
+                if efficiency_text:
+                    return efficiency_text
             
             # Look for expandable cost analysis sections
             expandable_elements = soup.find_all('div', class_='mw-collapsible')
@@ -1320,14 +1341,107 @@ class ItemDataScraper(BaseScraper):
                     break
             
             if cost_expandable:
-                # Use minimal Selenium expansion
-                return await self._expand_cost_analysis_with_selenium(url)
+                # Use minimal Selenium expansion for simple efficiency text
+                return await self._expand_simple_efficiency_with_selenium(url)
             
             return None
             
         except Exception as e:
             self.logger.error(f"Error extracting cost analysis: {e}")
             return None
+
+    def _extract_gold_efficiency_statement(self, section: Tag) -> Optional[str]:
+        """SIMPLIFIED: Extract gold efficiency statement like 'Echoes of Helia's base stats are 124.24% gold efficient.'"""
+        try:
+            section_text = section.get_text()
+            
+            # Look for the efficiency statement pattern
+            efficiency_pattern = r'([^.]*?(?:base stats are|stats are)\s+(\d+(?:\.\d+)?)%\s+gold efficient[^.]*\.)'
+            match = re.search(efficiency_pattern, section_text, re.IGNORECASE)
+            
+            if match:
+                return match.group(1).strip()
+            
+            # Fallback: look for any percentage with gold efficient
+            fallback_pattern = r'(\d+(?:\.\d+)?)%.*?gold\s+efficient'
+            fallback_match = re.search(fallback_pattern, section_text, re.IGNORECASE)
+            
+            if fallback_match:
+                percentage = fallback_match.group(1)
+                # Find item name from nearby text or use generic format
+                item_name_pattern = r'([A-Z][^.]*?)(?:\'s|s)?\s+(?:base\s+)?stats?\s+(?:are\s+)?'
+                name_match = re.search(item_name_pattern + fallback_pattern, section_text, re.IGNORECASE)
+                
+                if name_match:
+                    item_name = name_match.group(1).strip()
+                    return f"{item_name}'s base stats are {percentage}% gold efficient."
+                else:
+                    return f"Base stats are {percentage}% gold efficient."
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting gold efficiency statement: {e}")
+            return None
+
+    async def _expand_simple_efficiency_with_selenium(self, url: str) -> Optional[str]:
+        """Use Selenium to expand and extract simple efficiency statement."""
+        try:
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+            
+            chrome_options = Options()
+            chrome_options.add_argument('--headless')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            
+            driver = None
+            try:
+                driver = webdriver.Chrome(options=chrome_options)
+                driver.get(url)
+                
+                # Wait for page load
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "mw-collapsible"))
+                )
+                
+                # Find and click cost analysis collapsible
+                collapsibles = driver.find_elements(By.CLASS_NAME, "mw-collapsible")
+                for collapsible in collapsibles:
+                    if 'cost' in collapsible.text.lower() or 'efficiency' in collapsible.text.lower():
+                        driver.execute_script("arguments[0].click();", collapsible)
+                        time.sleep(2)  # Wait for expansion
+                        
+                        # Extract the efficiency statement from expanded content
+                        expanded_text = collapsible.text
+                        efficiency_pattern = r'([^.]*?(?:base stats are|stats are)\s+(\d+(?:\.\d+)?)%\s+gold efficient[^.]*\.)'
+                        match = re.search(efficiency_pattern, expanded_text, re.IGNORECASE)
+                        
+                        if match:
+                            return match.group(1).strip()
+                
+                return None
+                
+            except Exception as selenium_error:
+                self.logger.error(f"Selenium error in simple efficiency extraction: {selenium_error}")
+                return None
+                
+        except ImportError:
+            self.logger.warning("Selenium not available for cost analysis expansion")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error in Selenium simple efficiency expansion: {e}")
+            return None
+        finally:
+            if driver:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
 
     def _parse_cost_data(self, section: Tag) -> Optional[Dict[str, Any]]:
         """Parse comprehensive cost analysis data from section - FIXED for correct HTML structure."""
