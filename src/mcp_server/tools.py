@@ -275,12 +275,63 @@ class GetItemPatchNoteTool(MCPTool):
                 patch_version=patch_version
             )
             
-            return {
-                "success": True,
-                "data": patch_data
-            }
+            return patch_data
         except Exception as e:
             raise ValueError(f"Error retrieving patch notes for {item_name}: {str(e)}")
+
+
+class GetItemDataTool(MCPTool):
+    """Tool for retrieving comprehensive item data with differentiated extraction"""
+
+    def __init__(self, item_service=None) -> None:
+        super().__init__(
+            name="get_item_data",
+            description="Retrieves comprehensive item data including stats, recipe, cost analysis, notes, and similar items. Returns differentiated data based on item type (completed vs basic/epic items)."
+        )
+        self._item_service = item_service
+
+    def get_schema(self) -> MCPToolSchema:
+        return MCPToolSchema(
+            name=self.name,
+            description=self.description,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_name": {
+                        "type": "string",
+                        "description": "Name of the item to get data for (e.g., 'Echoes of Helia', 'Kindlegem')"
+                    },
+                    "sections": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of specific sections to extract (e.g., ['stats', 'recipe', 'cost_analysis']). If not provided, returns all available sections."
+                    }
+                },
+                "required": ["item_name"],
+                "additionalProperties": False
+            }
+        )
+
+    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute item data retrieval using ItemService"""
+        if not self._item_service:
+            raise RuntimeError("ItemService not properly injected")
+        
+        item_name = params.get("item_name", "").strip()
+        sections = params.get("sections")
+        
+        if not item_name:
+            raise ValueError("item_name is required")
+        
+        try:
+            result = await self._item_service.get_item_data(
+                item_name=item_name,
+                sections=sections
+            )
+            
+            return result
+        except Exception as e:
+            raise ValueError(f"Error retrieving item data for {item_name}: {str(e)}")
 
 
 class PingTool(MCPTool):
@@ -364,17 +415,20 @@ class ToolRegistry:
             from src.services.champions.abilities_service import AbilitiesService
             from src.services.champions.patch_note_service import PatchNoteService
             from src.services.items.item_patch_service import ItemPatchService
+            from src.services.items.item_service import ItemService
             
             stats_service = StatsService()
             abilities_service = AbilitiesService()
             patch_note_service = PatchNoteService()
             item_patch_service = ItemPatchService()
+            item_service = ItemService()
             
             # Register all LoL tools with injected services (following champion pattern)
             self.register_tool(GetChampionStatsTool(stats_service))
             self.register_tool(GetChampionAbilitiesTool(abilities_service))
             self.register_tool(GetChampionPatchNoteTool(patch_note_service))
             self.register_tool(GetItemPatchNoteTool(item_patch_service))
+            self.register_tool(GetItemDataTool(item_service))
         except Exception as e:
             # Broaden exception handling to catch any error during startup
             print(f"CRITICAL WARNING: Could not import and register services: {e}")

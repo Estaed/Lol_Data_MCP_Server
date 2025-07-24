@@ -1287,20 +1287,20 @@ Based on screenshot examples (Kindlegem, etc.):
 **Requirements (Following Champion Service & MCP Tool Pattern):**
 1. **ItemService**: Unified service combining stats and patch functionality (like ChampionService)
 2. **Perfect Name Processing**: Direct item name to data extraction (no fuzzy matching initially)
-3. **Two MCP Tools**: `get_item_stats` and `get_item_patch_note` (split tools)
+3. **Two MCP Tools**: `get_item_data` and `get_item_patch_note` (split tools)
 4. **Service Orchestration**: Coordinate scraper calls with error handling
 5. **Error Handling**: `ItemNotFoundError` for invalid item names
 
 **Service Methods:**
-- `get_item_stats(item_name, sections=None)` - Direct item stats retrieval
+- `get_item_data(item_name, sections=None)` - Direct item stats retrieval
 - `get_item_patch_history(item_name, patch_version=None)` - Direct patch history
 - `_normalize_item_name(item_name)` - Name normalization for URL generation
 - `_extract_item_data(item_name)` - Data extraction coordination
 
 **MCP Tool Specifications:**
 ```python
-# Tool 1: Item Stats
-get_item_stats(item_name: str, sections: List[str] = None)
+# Tool 1: Item datas
+get_item_data(item_name: str, sections: List[str] = None)
 # Assumes perfect names: "Echoes of Helia", "Kindlegem"
 # Returns: Differentiated data based on item type (completed vs basic/epic)
 

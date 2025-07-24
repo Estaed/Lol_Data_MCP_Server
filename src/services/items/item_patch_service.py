@@ -13,13 +13,7 @@ from typing import Dict, Any, Optional
 import structlog
 
 from src.data_sources.scrapers.items.item_patch_scraper import ItemPatchScraper, WikiScraperError
-
-# Custom exception for items (if not already defined elsewhere)
-class ItemNotFoundError(Exception):
-    """Exception raised when an item is not found."""
-    def __init__(self, item_name: str):
-        self.item_name = item_name
-        super().__init__(f"Item '{item_name}' not found")
+from src.models.exceptions import ItemNotFoundError
 
 
 class ItemPatchService:
