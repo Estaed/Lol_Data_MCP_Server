@@ -242,7 +242,7 @@ class RunePatchScraper(BaseScraper):
         # Structure: <dl><dt><a href="/en-us/V14.19" title="V14.19">V14.19</a></dt></dl>
         dt_elements = section.select('dt')
         
-        for i, dt_element in enumerate(dt_elements):
+        for dt_element in dt_elements:
             # Look for a link inside the dt element
             patch_link = dt_element.find('a')
             if not patch_link:
@@ -260,32 +260,32 @@ class RunePatchScraper(BaseScraper):
             if not self._is_valid_patch_version(version_text):
                 continue
             
-            # Find all content after this dt until the next dt or section header
+            # Find the parent dl element and then look for the next ul sibling
+            dl_parent = dt_element.find_parent('dl')
+            if not dl_parent:
+                # Fallback: use dt_element itself as reference
+                current_element = dt_element
+            else:
+                current_element = dl_parent
+            
+            # Find all ul elements after the dl until we hit the next patch
             raw_changes = []
-            current_element = dt_element
             
-            # Get the next dt element for boundary checking
-            next_dt = None
-            if i + 1 < len(dt_elements):
-                next_dt = dt_elements[i + 1]
-            
-            # Look for all content after the current dt
+            # Look for all ul siblings after the dl element
             while current_element:
                 current_element = current_element.find_next_sibling()
-                if current_element:
-                    # Stop if we hit the next patch dt or section header
-                    if current_element == next_dt or current_element.name in ['h2', 'h3', 'h4']:
-                        break
-                    
-                    # Extract changes from ul elements
-                    if current_element.name == 'ul':
-                        # Only process direct children <li> elements, not nested ones
-                        direct_li_elements = current_element.find_all('li', recursive=False)
-                        for li in direct_li_elements:
-                            # Get text from the main li element
-                            change_text = li.get_text(strip=True)
-                            if change_text:
-                                raw_changes.append(change_text)
+                if current_element and current_element.name == 'ul':
+                    # Extract changes from this ul - HANDLE NESTED STRUCTURE
+                    # Only process direct children <li> elements, not nested ones
+                    direct_li_elements = current_element.find_all('li', recursive=False)
+                    for li in direct_li_elements:
+                        # Get text from the main li element
+                        change_text = li.get_text(strip=True)
+                        if change_text:
+                            raw_changes.append(change_text)
+                elif current_element and current_element.name in ['dl', 'h2', 'h3']:
+                    # Stop if we hit another patch or section header
+                    break
             
             # Simple deduplication only
             cleaned_changes = list(dict.fromkeys(raw_changes))
