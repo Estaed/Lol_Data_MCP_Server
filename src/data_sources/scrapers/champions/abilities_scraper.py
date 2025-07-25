@@ -83,15 +83,16 @@ class AbilitiesScraper(BaseScraper):
             self.logger.info(f"{champion_name} is a complex weapon-system champion, using specialized scraping")
             return await self._scrape_aphelios_weapon_system(champion_name)
         
-        # Step 2: Fast HTTP-based dual-form detection (no Selenium)
-        has_dual_form = await self._detect_dual_form_http_fast(champion_name)
+        # Step 2: Fetch page once and reuse soup for dual-form detection
+        soup = await self.fetch_champion_page(champion_name)
+        has_dual_form = self._detect_dual_form_from_soup(soup)
         
         if has_dual_form:
             self.logger.info(f"{champion_name} likely has dual forms, using Selenium scraping")
             return await self._scrape_dual_form_abilities(champion_name)
         else:
-            self.logger.info(f"{champion_name} appears to be single form, using fast HTTP scraping")
-            return await self._scrape_single_form_abilities(champion_name)
+            self.logger.info(f"{champion_name} appears to be single form, using cached soup")
+            return await self._scrape_single_form_abilities_from_soup(soup)
 
     async def _detect_dual_form_http_fast(self, champion_name: str) -> bool:
         """Ultra-conservative HTTP-based dual-form detection to prevent false positives."""
@@ -164,6 +165,64 @@ class AbilitiesScraper(BaseScraper):
             
         except Exception as e:
             self.logger.warning(f"Fast dual-form detection failed for {champion_name}: {e}, falling back to False")
+            return False
+    
+    def _detect_dual_form_from_soup(self, soup: BeautifulSoup) -> bool:
+        """Detect dual-form from already fetched soup object (optimized to avoid redundant HTTP requests)."""
+        try:
+            # Strategy 1: Look for the specific dual-form selector (most reliable)
+            dual_form_element = soup.select('#\\32')
+            if dual_form_element:
+                self.logger.info("Dual-form detection: Found specific dual-form element")
+                return True
+            
+            # Strategy 2: Look for very specific transformation language
+            all_text = soup.get_text().lower()
+            
+            ultra_specific_patterns = [
+                'transforms into', 'switches between', 'form toggle', 'dual form',
+                'changes form', 'alternate form', 'different forms'
+            ]
+            
+            form_combinations = [
+                ('human', 'spider'), ('mini', 'mega'), ('hammer', 'cannon'), ('human', 'cougar')
+            ]
+            
+            # Check for transformation patterns
+            transformation_count = sum(1 for pattern in ultra_specific_patterns if pattern in all_text)
+            
+            # Check for form combinations
+            form_combination_found = False
+            for form1, form2 in form_combinations:
+                if form1 in all_text and form2 in all_text:
+                    if (f'{form1} form' in all_text and f'{form2} form' in all_text) or \
+                       (f'{form1}:' in all_text and f'{form2}:' in all_text):
+                        form_combination_found = True
+                        break
+            
+            # Strong evidence required
+            if transformation_count >= 2 and form_combination_found:
+                self.logger.info(f"Dual-form detection: Found {transformation_count} transformation patterns and form combinations")
+                return True
+            
+            # Strategy 3: Look for tabber with specific form names
+            tabber_nav = soup.select('.tabbernav')
+            if tabber_nav:
+                tab_links = soup.select('.tabbernav a')
+                if len(tab_links) >= 2:
+                    tab_texts = [link.get_text().strip().lower() for link in tab_links]
+                    tab_text_combined = ' '.join(tab_texts)
+                    
+                    for form1, form2 in form_combinations:
+                        if form1 in tab_text_combined and form2 in tab_text_combined:
+                            self.logger.info(f"Dual-form detection: Found {form1}/{form2} forms in tabs")
+                            return True
+            
+            self.logger.info("Dual-form detection: Appears to be single form")
+            return False
+            
+        except Exception as e:
+            self.logger.warning(f"Dual-form detection failed: {e}, falling back to False")
             return False
 
     async def _detect_dual_form_with_selenium(self, champion_name: str) -> bool:
@@ -1054,6 +1113,20 @@ class AbilitiesScraper(BaseScraper):
             "abilities": abilities,
             "dual_form": False,
             "data_source": "wiki_abilities_scrape"
+        }
+    
+    async def _scrape_single_form_abilities_from_soup(self, soup: BeautifulSoup) -> Dict[str, Any]:
+        """Scrape abilities for single form champions using cached soup object (optimized to avoid redundant HTTP requests)."""
+        abilities = self._extract_all_abilities_from_soup(soup, "single_form")
+        
+        if not abilities:
+            raise WikiScraperError("No abilities found in cached soup")
+        
+        self.logger.info(f"Successfully scraped {len(abilities)} abilities from cached soup")
+        return {
+            "abilities": abilities,
+            "dual_form": False,
+            "data_source": "wiki_abilities_scrape_cached"
         }
 
     def _extract_all_abilities_from_soup(self, soup: BeautifulSoup, form_label: str) -> Dict[str, Any]:

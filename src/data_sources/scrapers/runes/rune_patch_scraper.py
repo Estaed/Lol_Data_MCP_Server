@@ -349,7 +349,7 @@ class RunePatchScraper(BaseScraper):
 
     def normalize_rune_name(self, rune_name: str) -> str:
         """
-        Normalize rune name for URL generation.
+        Normalize rune name for URL generation (wrapper for base class method).
         
         Args:
             rune_name: Raw rune name
@@ -357,14 +357,4 @@ class RunePatchScraper(BaseScraper):
         Returns:
             Normalized rune name for URL
         """
-        # Replace spaces with underscores and handle special characters
-        normalized = rune_name.strip()
-        
-        # Handle special characters - encode properly for URLs
-        # Apostrophes become %27 in URLs
-        normalized = normalized.replace("'", "%27")
-        
-        # Spaces become underscores
-        normalized = normalized.replace(" ", "_")
-        
-        return normalized
+        return self.normalize_wiki_page_name(rune_name)

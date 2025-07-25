@@ -201,75 +201,49 @@ class RuneDataScraper(BaseScraper):
             self.logger.error(f"Error extracting sidebar data: {str(e)}")
             return sidebar_data
 
-    def _extract_notes_section(self, soup: BeautifulSoup) -> Dict[str, Any]:
+    def _extract_generic_section(self, soup: BeautifulSoup, section_name: str) -> Dict[str, Any]:
         """
-        Extract Notes section content dynamically.
+        Extract content for any section like 'Notes' or 'Strategy' (consolidated from duplicate methods).
         
         Args:
             soup: BeautifulSoup object of the entire page
+            section_name: Name of the section to extract ('Notes', 'Strategy', etc.)
             
         Returns:
-            Dictionary containing notes data
+            Dictionary containing section data
         """
-        notes_data = {
+        section_data = {
             'content': [],
             'found': False
         }
         
         try:
-            # Find Notes section heading
-            notes_heading = self._find_section_heading(soup, ['Notes'])
-            if not notes_heading:
-                self.logger.debug("No Notes section found")
-                return notes_data
+            # Find section heading
+            heading = self._find_section_heading(soup, [section_name])
+            if not heading:
+                self.logger.debug(f"No {section_name} section found")
+                return section_data
             
             # Extract content after the heading
-            content = self._extract_section_content(notes_heading)
+            content = self._extract_section_content(heading)
             if content:
-                notes_data['content'] = self._process_section_content(content)
-                notes_data['found'] = True
+                section_data['content'] = self._process_section_content(content)
+                section_data['found'] = True
                 
-            self.logger.debug(f"Extracted notes section: {len(notes_data['content'])} items")
-            return notes_data
+            self.logger.debug(f"Extracted {section_name.lower()} section: {len(section_data['content'])} items")
+            return section_data
             
         except Exception as e:
-            self.logger.error(f"Error extracting notes section: {str(e)}")
-            return notes_data
+            self.logger.error(f"Error extracting {section_name.lower()} section: {str(e)}")
+            return section_data
+
+    def _extract_notes_section(self, soup: BeautifulSoup) -> Dict[str, Any]:
+        """Extract Notes section content (wrapper for generic method)."""
+        return self._extract_generic_section(soup, 'Notes')
 
     def _extract_strategy_section(self, soup: BeautifulSoup) -> Dict[str, Any]:
-        """
-        Extract Strategy section content dynamically.
-        
-        Args:
-            soup: BeautifulSoup object of the entire page
-            
-        Returns:
-            Dictionary containing strategy data
-        """
-        strategy_data = {
-            'content': [],
-            'found': False
-        }
-        
-        try:
-            # Find Strategy section heading
-            strategy_heading = self._find_section_heading(soup, ['Strategy'])
-            if not strategy_heading:
-                self.logger.debug("No Strategy section found")
-                return strategy_data
-            
-            # Extract content after the heading
-            content = self._extract_section_content(strategy_heading)
-            if content:
-                strategy_data['content'] = self._process_section_content(content)
-                strategy_data['found'] = True
-                
-            self.logger.debug(f"Extracted strategy section: {len(strategy_data['content'])} items")
-            return strategy_data
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting strategy section: {str(e)}")
-            return strategy_data
+        """Extract Strategy section content (wrapper for generic method)."""
+        return self._extract_generic_section(soup, 'Strategy')
 
     def _find_section_heading(self, soup: BeautifulSoup, section_names: List[str]) -> Optional[Tag]:
         """
@@ -411,7 +385,7 @@ class RuneDataScraper(BaseScraper):
 
     def normalize_rune_name(self, rune_name: str) -> str:
         """
-        Normalize rune name for URL generation.
+        Normalize rune name for URL generation (wrapper for base class method).
         
         Args:
             rune_name: Raw rune name (e.g., "Summon Aery")
@@ -419,13 +393,4 @@ class RuneDataScraper(BaseScraper):
         Returns:
             Normalized rune name for URL
         """
-        # Handle special characters and spaces
-        normalized = rune_name.strip()
-        
-        # Replace spaces with underscores
-        normalized = normalized.replace(" ", "_")
-        
-        # Handle apostrophes and special characters
-        normalized = normalized.replace("'", "%27")
-        
-        return normalized
+        return self.normalize_wiki_page_name(rune_name)

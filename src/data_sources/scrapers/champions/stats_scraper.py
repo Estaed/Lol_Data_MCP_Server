@@ -101,8 +101,13 @@ class StatsScraper(BaseScraper):
             level_dropdown = Select(level_dropdown_element)
             level_dropdown.select_by_value(str(level))
             
-            # Wait for JavaScript to update the stats
-            time.sleep(1.0)
+            # Wait for JavaScript to update the stats - wait for HP element to be updated
+            try:
+                wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, LEVEL_SELECTORS['hp'])))
+            except TimeoutException:
+                self.logger.warning(f"Timeout waiting for stats to update for level {level}")
+                # Fall back to short sleep if wait fails
+                time.sleep(0.5)
 
             # Extract all level-specific stats in correct order
             stats = {}

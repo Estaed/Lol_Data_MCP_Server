@@ -45,6 +45,38 @@ class ItemDataScraper(BaseScraper):
     Simplified scraper for item data using direct page content analysis.
     Assumes perfect item names and leverages visible page information.
     """
+    
+    # Pre-compiled regex patterns for performance optimization
+    _WGCATEGORIES_RE = re.compile(r'"wgCategories":\[(.*?)\]')
+    _STAT_BASE_RE = re.compile(r'([+-]?\d+(?:\.\d+)?)')
+    _STAT_NAME_RE = re.compile(r'^[+-]?\d+(?:\.\d+)?(?:\s*\([^)]*\))?\s*')
+    _STAT_BONUS_RE = re.compile(r'\(\+?([+-]?\d+(?:\.\d+)?)\)')
+    _WHITESPACE_RE = re.compile(r'\s+')
+    _SENTENCE_FIX_RE = re.compile(r'(\d+)\.\s*([A-Z])')
+    _PUNCT_SPACE_RE = re.compile(r'\s+([.,:;!?])')
+    _SENTENCE_SPACE_RE = re.compile(r'([.!?])([A-Z])')
+    _COST_GOLD_RE = re.compile(r'(\d+)')
+    _DIGIT_NAME_RE = re.compile(r'^\d+[A-Za-z]*\d*$')
+    _MULTIPLE_NEWLINES_RE = re.compile(r'\n\s*\n\s*\n+')
+    _SPACED_EQUALS_RE = re.compile(r'\s*=\s*')
+    _SPACED_DECIMAL_RE = re.compile(r'(\d)\s*\.\s*(\d)')
+    _DUPLICATE_GOLD_RE = re.compile(r'(\d+(?:\.\d+)?)\s+gold\s+\1(?!\d)')
+    _SPACES_TABS_RE = re.compile(r'[ \t]+')
+    _STAT_VALUE_RE = re.compile(r'(=\s*\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?%)')
+    _TOTAL_GOLD_RE = re.compile(r'Total\s+Gold\s+Value\s*=?\s*(\d+(?:\.\d+)?)', re.IGNORECASE)
+    _GOLD_EFFICIENCY_RE = re.compile(r'Gold\s+efficiency', re.IGNORECASE)
+    _DUPLICATE_GOLD_VALUE_RE = re.compile(r'^Gold\s*Value\s*Gold\s*Value', re.MULTILINE)
+    _GOLD_VALUE_COLON_RE = re.compile(r'^Gold\s*Value(?!\s*=)', re.MULTILINE)
+    _EFFICIENCY_PERCENT_RE = re.compile(r'(\d+(?:\.\d+)?)%.*?gold\s+efficient', re.IGNORECASE)
+    _TOTAL_GOLD_VALUE_RE = re.compile(r'total\s+gold\s+value.*?(\d+(?:\.\d+)?)', re.IGNORECASE)
+    _SPECIAL_CHARS_RE = re.compile(r'[^\w\s%]')
+    _TOTAL_WORTH_RE = re.compile(r'(?:total|worth)\s*:\s*(\d+(?:\.\d+)?)\s*gold', re.IGNORECASE)
+    _STATS_GOLD_RE = re.compile(r'stats?\s*:\s*(\d+(?:\.\d+)?)\s*gold', re.IGNORECASE)
+    _PASSIVE_GOLD_RE = re.compile(r'passive\s*:\s*(\d+(?:\.\d+)?)\s*gold', re.IGNORECASE)
+    _PASSIVE_DESC_RE = re.compile(r'passive[^.]*?([^.]{10,100})', re.IGNORECASE)
+    _STAT_LINE_RE = re.compile(r'(\d+(?:\.\d+)?)\s*([^=]+?)\s*=\s*(\d+(?:\.\d+)?)')
+    _LEADING_TRAILING_WS_RE = re.compile(r'^\s+|\s+$', re.MULTILINE)
+    _MAP_DIFFERENCES_RE = re.compile(r'\s*differences?\s*.*', re.IGNORECASE)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -108,28 +140,12 @@ class ItemDataScraper(BaseScraper):
             ItemType classification
         """
         try:
-            # Strategy 1: Check main text description (most reliable)
-            # Pattern: "X is a [tier] item in League of Legends"
-            main_text = soup.get_text().lower()
-            
-            if 'legendary item in' in main_text or 'mythic item in' in main_text:
-                self.logger.debug("Detected completed item (legendary/mythic in description)")
-                return ItemType.COMPLETED
-            
-            if 'basic item in' in main_text:
-                self.logger.debug("Detected basic item (basic in description)")
-                return ItemType.BASIC
-                
-            if 'epic item in' in main_text:
-                self.logger.debug("Detected epic item (epic in description)")
-                return ItemType.EPIC
-            
-            # Strategy 2: Check wgCategories in page script (very reliable)
+            # Strategy 1: Check wgCategories in page script (most reliable and efficient)
             scripts = soup.find_all('script')
             for script in scripts:
                 script_text = script.get_text()
                 if 'wgCategories' in script_text:
-                    categories_match = re.search(r'"wgCategories":\[(.*?)\]', script_text)
+                    categories_match = self._WGCATEGORIES_RE.search(script_text)
                     if categories_match:
                         categories_str = categories_match.group(1).lower()
                         if 'legendary items' in categories_str or 'mythic items' in categories_str:
@@ -141,6 +157,23 @@ class ItemDataScraper(BaseScraper):
                         elif 'epic items' in categories_str:
                             self.logger.debug("Detected epic item (wgCategories)")
                             return ItemType.EPIC
+            
+            # Strategy 2: Check first paragraph only (much more efficient than full page)
+            first_paragraph = soup.find('p')
+            if first_paragraph:
+                main_text = first_paragraph.get_text().lower()
+                
+                if 'legendary item in' in main_text or 'mythic item in' in main_text:
+                    self.logger.debug("Detected completed item (legendary/mythic in description)")
+                    return ItemType.COMPLETED
+                
+                if 'basic item in' in main_text:
+                    self.logger.debug("Detected basic item (basic in description)")
+                    return ItemType.BASIC
+                    
+                if 'epic item in' in main_text:
+                    self.logger.debug("Detected epic item (epic in description)")
+                    return ItemType.EPIC
             
             # Strategy 3: Check category links at bottom of page
             category_links = soup.find_all('a', href=lambda x: x and '/Category:' in x)
@@ -486,7 +519,7 @@ class ItemDataScraper(BaseScraper):
         """
         try:
             # Extract base value
-            base_match = re.match(r'([+-]?\d+(?:\.\d+)?)', stat_text.strip())
+            base_match = self._STAT_BASE_RE.match(stat_text.strip())
             if not base_match:
                 return None
             
@@ -499,11 +532,11 @@ class ItemDataScraper(BaseScraper):
                 stat_name = stat_name_match.group(1).strip()
             else:
                 # Fallback: extract everything after base value
-                stat_name = re.sub(r'^[+-]?\d+(?:\.\d+)?(?:\s*\([^)]*\))?\s*', '', stat_text).strip()
+                stat_name = self._STAT_NAME_RE.sub('', stat_text).strip()
             
             # FIXED: Clean stat name and remove number prefixes
             stat_name = stat_name.strip().lower()
-            stat_name = re.sub(r'[^\w\s%]', '', stat_name)  # Keep % for percentages
+            stat_name = self._SPECIAL_CHARS_RE.sub('', stat_name)  # Keep % for percentages
             stat_name = stat_name.replace(' ', '_')
             
             # Remove any leading numbers and underscores (like "35_" from "35_ability_power")
@@ -512,7 +545,7 @@ class ItemDataScraper(BaseScraper):
             # FIXED: For masterwork tab, create structured object with base/bonus/total
             if tab_type == 'masterwork':
                 # Extract bonus value from parentheses (if exists)
-                bonus_match = re.search(r'\(\+?([+-]?\d+(?:\.\d+)?)\)', stat_text)
+                bonus_match = self._STAT_BONUS_RE.search(stat_text)
                 if bonus_match:
                     bonus_value = float(bonus_match.group(1))
                     total_value = base_value + bonus_value
@@ -630,11 +663,11 @@ class ItemDataScraper(BaseScraper):
                 return description
             
             # Clean up extra whitespace
-            description = re.sub(r'\s+', ' ', description).strip()
+            description = self._WHITESPACE_RE.sub(' ', description).strip()
             
             # FIXED: Split numbered points into separate sentences
             # Look for patterns like "2. Healing" and split them
-            description = re.sub(r'(\d+)\.\s*([A-Z])', r'. \2', description)
+            description = self._SENTENCE_FIX_RE.sub(r'. \2', description)
             
             # Fix spacing around punctuation
             description = re.sub(r'\s+([.,:;!?])', r'\1', description)  # Remove space before punctuation

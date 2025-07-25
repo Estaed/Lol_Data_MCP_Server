@@ -314,6 +314,28 @@ class BaseScraper:
 
         return normalized
 
+    def normalize_wiki_page_name(self, name: str) -> str:
+        """
+        Generic method to normalize any wiki page name for URL generation.
+        Consolidates functionality from rune_data_scraper and rune_patch_scraper.
+        
+        Args:
+            name: Raw name (e.g., "Summon Aery", "Echoes of Helia")
+            
+        Returns:
+            Normalized name for URL (e.g., "Summon_Aery", "Echoes_of_Helia")
+        """
+        # Handle special characters and spaces
+        normalized = name.strip()
+        
+        # Replace spaces with underscores  
+        normalized = normalized.replace(" ", "_")
+        
+        # Handle apostrophes and special characters for URL compatibility
+        normalized = normalized.replace("'", "%27")
+        
+        return normalized
+
     async def fetch_champion_page(self, champion_name: str) -> BeautifulSoup:
         """
         Fetch and parse a champion's wiki page, using cache if available.
