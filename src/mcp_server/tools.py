@@ -396,6 +396,114 @@ class ServerInfoTool(MCPTool):
         }
 
 
+class GetRuneDataTool(MCPTool):
+    """Tool for retrieving comprehensive rune data including sidebar, notes, and strategy"""
+
+    def __init__(self, rune_service=None) -> None:
+        super().__init__(
+            name="get_rune_data",
+            description="Retrieves comprehensive rune data including sidebar information, notes, and strategy sections."
+        )
+        self._rune_service = rune_service
+
+    def get_schema(self) -> MCPToolSchema:
+        return MCPToolSchema(
+            name=self.name,
+            description=self.description,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "rune_name": {
+                        "type": "string",
+                        "description": "Name of the rune to get data for (e.g., 'Summon Aery', 'Arcane Comet')"
+                    },
+                    "sections": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of specific sections to extract (e.g., ['sidebar', 'notes', 'strategy']). If not provided, returns all available sections."
+                    }
+                },
+                "required": ["rune_name"],
+                "additionalProperties": False
+            }
+        )
+
+    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute rune data retrieval using RuneService"""
+        if not self._rune_service:
+            raise RuntimeError("RuneService not properly injected")
+        
+        rune_name = params.get("rune_name", "").strip()
+        sections = params.get("sections")
+        
+        if not rune_name:
+            raise ValueError("rune_name is required")
+        
+        try:
+            result = await self._rune_service.get_rune_data(
+                rune_name=rune_name,
+                sections=sections
+            )
+            
+            return result
+        except Exception as e:
+            raise ValueError(f"Error retrieving rune data for {rune_name}: {str(e)}")
+
+
+class GetRunePatchNoteTool(MCPTool):
+    """Tool for retrieving rune patch notes from League of Legends Wiki"""
+
+    def __init__(self, rune_patch_service=None) -> None:
+        super().__init__(
+            name="get_rune_patch_note",
+            description="Retrieves patch history for a rune. If no patch version is specified, returns all patch notes. If a specific patch version is provided, returns only that patch note."
+        )
+        self.rune_patch_service = rune_patch_service
+
+    def get_schema(self) -> MCPToolSchema:
+        return MCPToolSchema(
+            name=self.name,
+            description=self.description,
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "rune_name": {
+                        "type": "string",
+                        "description": "Name of the rune to get patch notes for (e.g., 'Summon Aery')"
+                    },
+                    "patch_version": {
+                        "type": "string",
+                        "description": "Optional specific patch version (e.g., '14.19', 'V14.19'). If not provided, returns all patch notes."
+                    }
+                },
+                "required": ["rune_name"],
+                "additionalProperties": False
+            }
+        )
+
+    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute the get_rune_patch_note tool"""
+        rune_name = params.get("rune_name", "").strip()
+        patch_version = params.get("patch_version")
+        
+        if not rune_name:
+            raise ValueError("rune_name is required")
+        
+        if not self.rune_patch_service:
+            raise ValueError("RunePatchService not available")
+        
+        try:
+            # Get patch notes data directly from RunePatchService
+            patch_data = await self.rune_patch_service.get_rune_patch_notes(
+                rune_name=rune_name,
+                patch_version=patch_version
+            )
+            
+            return patch_data
+        except Exception as e:
+            raise ValueError(f"Error retrieving patch notes for {rune_name}: {str(e)}")
+
+
 class ToolRegistry:
     """Central registry for all MCP tools"""
 
@@ -416,12 +524,16 @@ class ToolRegistry:
             from src.services.champions.patch_note_service import PatchNoteService
             from src.services.items.item_patch_service import ItemPatchService
             from src.services.items.item_service import ItemService
+            from src.services.runes.rune_service import RuneService
+            from src.services.runes.rune_patch_service import RunePatchService
             
             stats_service = StatsService()
             abilities_service = AbilitiesService()
             patch_note_service = PatchNoteService()
             item_patch_service = ItemPatchService()
             item_service = ItemService()
+            rune_service = RuneService()
+            rune_patch_service = RunePatchService()
             
             # Register all LoL tools with injected services (following champion pattern)
             self.register_tool(GetChampionStatsTool(stats_service))
@@ -429,6 +541,8 @@ class ToolRegistry:
             self.register_tool(GetChampionPatchNoteTool(patch_note_service))
             self.register_tool(GetItemPatchNoteTool(item_patch_service))
             self.register_tool(GetItemDataTool(item_service))
+            self.register_tool(GetRuneDataTool(rune_service))
+            self.register_tool(GetRunePatchNoteTool(rune_patch_service))
         except Exception as e:
             # Broaden exception handling to catch any error during startup
             print(f"CRITICAL WARNING: Could not import and register services: {e}")

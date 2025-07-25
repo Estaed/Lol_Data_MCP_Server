@@ -16,4 +16,12 @@ class ItemNotFoundError(Exception):
     
     def __init__(self, item_name: str):
         self.item_name = item_name
-        super().__init__(f"Item '{item_name}' not found") 
+        super().__init__(f"Item '{item_name}' not found")
+
+
+class RuneNotFoundError(Exception):
+    """Exception raised when a rune is not found"""
+    
+    def __init__(self, rune_name: str):
+        self.rune_name = rune_name
+        super().__init__(f"Rune '{rune_name}' not found") 
