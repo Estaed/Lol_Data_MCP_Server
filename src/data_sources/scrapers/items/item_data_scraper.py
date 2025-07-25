@@ -292,9 +292,9 @@ class ItemDataScraper(BaseScraper):
             if stats:
                 data['stats'] = stats
         
-        # Extract recipe section
+        # Extract recipe from sidebar
         if not sections or 'recipe' in sections:
-            recipe = self._extract_recipe_section(soup)
+            recipe = self._extract_sidebar_recipe(soup)
             if recipe:
                 data['recipe'] = recipe
         
@@ -331,9 +331,9 @@ class ItemDataScraper(BaseScraper):
             if stats:
                 data['stats'] = stats
         
-        # Extract recipe section (what it builds from)
+        # Extract recipe from sidebar
         if not sections or 'recipe' in sections:
-            recipe = self._extract_recipe_section(soup)
+            recipe = self._extract_sidebar_recipe(soup)
             if recipe:
                 data['recipe'] = recipe
         
@@ -679,1093 +679,147 @@ class ItemDataScraper(BaseScraper):
         except Exception as e:
             self.logger.error(f"Error extracting cost/sell info: {e}")
             return None
-
-    def _extract_recipe_section(self, soup: BeautifulSoup) -> Optional[List[str]]:
-        """FIXED: More robust recipe extraction with multiple fallback strategies."""
+    
+    def _extract_sidebar_recipe(self, soup: BeautifulSoup) -> Optional[List[str]]:
+        """FIXED: Extract recipe using actual HTML structure from infobox headers."""
         try:
-            # Strategy 1: Look for recipe table with item information
-            recipe_result = self._find_recipe_table_flexible(soup)
-            if recipe_result:
-                return recipe_result
+            recipe_components = []
             
-            # Strategy 2: Look for "Recipe" section by heading
-            recipe_section = self._find_section_by_pattern(soup, ['recipe', 'components', 'builds from'])
-            if recipe_section:
-                components = self._extract_components_from_section(recipe_section)
-                if components:
-                    return [f"+-- {comp}" for comp in components]
-            
-            # Strategy 3: Look for any table with item divs
-            tables = soup.find_all('table')
-            for table in tables:
-                items = table.find_all('div', class_='item')
-                if len(items) >= 2:  # Need at least main item + 1 component
-                    result = self._parse_any_recipe_table(table)
-                    if result:
-                        return result
-            
-            # Strategy 4: Extract from infobox if present
+            # Strategy 1: Look for infobox-header containing "Recipe"
             infobox = soup.find('div', class_='infobox')
             if infobox:
-                recipe_links = self._extract_recipe_from_infobox(infobox)
-                if recipe_links:
-                    return [f"+-- {link}" for link in recipe_links]
-            
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting recipe section: {e}")
-            return None
-
-    def _find_recipe_table_flexible(self, soup: BeautifulSoup) -> Optional[List[str]]:
-        """ENHANCED: Comprehensive recipe table detection with multiple strategies."""
-        try:
-            # Strategy 1: Look for tables in main content area
-            main_content = soup.select_one('#mw-content-text > div.mw-content-ltr.mw-parser-output')
-            if main_content:
-                tables = main_content.find_all('table', recursive=False)
-            else:
-                tables = soup.find_all('table')
-            
-            # Try each table in order
-            for table in tables:
-                result = self._analyze_and_parse_table(table)
-                if result:
-                    return result
-            
-            # Strategy 2: Look for tables anywhere that contain item information
-            all_tables = soup.find_all('table')
-            for table in all_tables:
-                if table not in tables:  # Skip already checked tables
-                    item_count = len(table.find_all('div', class_=['item', 'item-icon']))
-                    if item_count >= 2:
-                        result = self._analyze_and_parse_table(table)
-                        if result:
-                            return result
-            
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Error in flexible recipe table detection: {e}")
-            return None
-    
-    def _analyze_and_parse_table(self, table: Tag) -> Optional[List[str]]:
-        """FIXED: Analyze table structure and extract only DIRECT recipe components."""
-        try:
-            # Extract all items with their structural information
-            all_components = self._extract_all_components_comprehensive(table)
-            
-            if len(all_components) < 2:
-                return None
-            
-            # Identify main item
-            main_item = self._identify_main_item_improved(all_components)
-            if not main_item:
-                return None
-            
-            # Filter out the main item to get potential components
-            potential_components = [item for item in all_components if item['name'] != main_item['name']]
-            
-            # FIXED: Extract only DIRECT components by analyzing table structure
-            direct_components = self._extract_direct_components_only(table, main_item, potential_components)
-            
-            if direct_components:
-                return [self._format_component_line(comp) for comp in direct_components]
-            
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Error analyzing table: {e}")
-            return None
-    
-    def _extract_direct_components_only(self, table: Tag, main_item: Dict[str, Any], potential_components: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """SIMPLIFIED: Extract direct components without excessive duplication."""
-        try:
-            # Use cost-based analysis to identify direct components
-            main_cost = main_item.get('total_cost', 0)
-            main_combine_cost = main_item.get('combine_cost', 0)
-            
-            # Filter for direct components using cost heuristics
-            direct_components = []
-            seen_names = set()
-            
-            for comp in potential_components:
-                comp_name = comp['name']
-                comp_cost = comp.get('total_cost', 0)
+                # Find the Recipe header specifically
+                recipe_header = infobox.find('div', class_='infobox-header', string=lambda text: 
+                    text and 'recipe' in text.lower())
                 
-                # Skip if already seen
-                if comp_name in seen_names:
-                    continue
-                
-                # Include component if it meets direct component criteria
-                if self._is_direct_component_simple(comp, main_item, potential_components):
-                    direct_components.append(comp)
-                    seen_names.add(comp_name)
-            
-            # Limit to reasonable number of components (2-3 typically)
-            if len(direct_components) > 3:
-                # Sort by cost and take top 3
-                direct_components.sort(key=lambda x: x.get('total_cost', 0), reverse=True)
-                direct_components = direct_components[:3]
-            
-            return direct_components
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting direct components: {e}")
-            return potential_components[:2]
-    
-    def _is_direct_component_simple(self, component: Dict[str, Any], main_item: Dict[str, Any], all_components: List[Dict[str, Any]]) -> bool:
-        """IMPROVED: Better filtering for direct components only."""
-        try:
-            comp_name = component['name']
-            comp_cost = component.get('total_cost', 0)
-            main_cost = main_item.get('total_cost', 0)
-            
-            # Component should be less expensive than main item
-            if comp_cost >= main_cost:
-                return False
-            
-            # Check if this component is a sub-component of another component
-            for other_comp in all_components:
-                other_name = other_comp['name']
-                other_cost = other_comp.get('total_cost', 0)
-                other_combine = other_comp.get('combine_cost', 0)
-                
-                # Skip self and main item
-                if other_name == comp_name or other_name == main_item['name']:
-                    continue
-                
-                # If this other component has a combine cost and is more expensive,
-                # and our component is much cheaper, it's likely a sub-component
-                if (other_cost > comp_cost and other_combine > 0 and 
-                    comp_cost < 500 and other_cost - other_combine > comp_cost * 0.7):
-                    # This component likely builds into the other component
-                    return False
-            
-            # For expensive main items (>2000), prefer substantial components (>800)
-            if main_cost > 2000 and comp_cost < 800:
-                return False
-            
-            # For medium main items (1000-2000), prefer components >400
-            if 1000 < main_cost <= 2000 and comp_cost < 400:
-                return False
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error in direct component check: {e}")
-            return True
-    
-    
-    def _extract_all_components_comprehensive(self, table: Tag) -> List[Dict[str, Any]]:
-        """ENHANCED: Extract components including quantity tracking for duplicates."""
-        try:
-            all_items = []
-            item_counts = {}  # Track how many times each item appears
-            
-            # Method 1: Extract from standard item divs
-            item_divs = table.find_all('div', class_='item')
-            for div in item_divs:
-                item_info = self._extract_detailed_item_info(div)
-                if item_info:
-                    name = item_info['name']
-                    if name in item_counts:
-                        item_counts[name] += 1
-                    else:
-                        item_counts[name] = 1
-                        all_items.append(item_info)
-            
-            # Method 2: Extract from item-icon divs
-            icon_divs = table.find_all('div', class_='item-icon')
-            for div in icon_divs:
-                item_info = self._extract_detailed_item_info(div)
-                if item_info:
-                    name = item_info['name']
-                    if name in item_counts:
-                        item_counts[name] += 1
-                    else:
-                        item_counts[name] = 1
-                        # Only add if not already in all_items
-                        if not any(item['name'] == name for item in all_items):
-                            all_items.append(item_info)
-            
-            # Method 3: Count links in table to detect duplicates
-            table_links = table.find_all('a')
-            link_counts = {}
-            for link in table_links:
-                href = link.get('href', '')
-                if ('/wiki/' in href or '/en-us/' in href) and not any(skip in href for skip in ['Category:', 'File:', 'Special:']):
-                    item_name = link.get_text().strip()
-                    if item_name and len(item_name) > 2:
-                        link_counts[item_name] = link_counts.get(item_name, 0) + 1
-            
-            # Update quantities based on link counts
-            for item in all_items:
-                name = item['name']
-                # Use the higher count between div count and link count
-                final_count = max(item_counts.get(name, 1), link_counts.get(name, 1))
-                if final_count > 1:
-                    item['quantity'] = final_count
-            
-            # Method 4: Extract from text patterns for items we might have missed
-            if len(all_items) < 2:
-                all_cells = table.find_all(['td', 'th'])
-                for cell in all_cells:
-                    cell_text = cell.get_text()
-                    # Look for patterns like "2 × Needlessly Large Rod"
-                    qty_matches = re.findall(r'(\d+)\s*[×x]\s*([^\n\r,]+)', cell_text)
-                    for qty_str, item_name in qty_matches:
-                        qty = int(qty_str)
-                        clean_name = item_name.strip()
-                        if clean_name and not any(item['name'] == clean_name for item in all_items):
-                            all_items.append({
-                                'name': clean_name,
-                                'total_cost': 0,
-                                'combine_cost': 0,
-                                'quantity': qty
-                            })
-            
-            return all_items
-            
-        except Exception as e:
-            self.logger.error(f"Error in comprehensive component extraction: {e}")
-            return []
-    
-    def _handle_component_quantities(self, table: Tag, components: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """FIXED: Simple quantity handling without creating excessive duplicates."""
-        try:
-            # For now, just return deduplicated components
-            # The actual recipe should show correct quantities based on wiki structure
-            seen_names = set()
-            unique_components = []
-            
-            for comp in components:
-                name = comp['name']
-                if name not in seen_names:
-                    unique_components.append(comp)
-                    seen_names.add(name)
-            
-            return unique_components
-            
-        except Exception as e:
-            self.logger.error(f"Error handling component quantities: {e}")
-            return components
-    
-    def _parse_any_recipe_table(self, table: Tag) -> Optional[List[str]]:
-        """FIXED: Parse any table structure with better main item detection."""
-        try:
-            all_items = []
-            
-            # Extract all item information with costs and positions
-            item_elements = table.find_all(['div'], class_=['item', 'item-icon'])
-            
-            for item_elem in item_elements:
-                item_info = self._extract_detailed_item_info(item_elem)
-                if item_info:
-                    all_items.append(item_info)
-            
-            if len(all_items) < 2:
-                return None
-            
-            # Identify main item vs components using multiple criteria
-            main_item = self._identify_main_item_improved(all_items)
-            components = [item for item in all_items if item['name'] != main_item['name']]
-            
-            # Remove duplicates and format
-            unique_components = self._deduplicate_components(components)
-            
-            if unique_components:
-                return [self._format_component_line(comp) for comp in unique_components]
-            
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Error parsing recipe table: {e}")
-            return None
-    
-    def _extract_detailed_item_info(self, item_elem: Tag) -> Optional[Dict[str, Any]]:
-        """Extract detailed item information including position and costs."""
-        try:
-            item_info = {}
-            
-            # Extract name
-            item_info['name'] = self._extract_item_name_flexible(item_elem)
-            if not item_info['name']:
-                return None
-            
-            # Extract cost information if available
-            gold_elem = item_elem.find_parent().find('div', class_='gold') if item_elem.find_parent() else None
-            if not gold_elem:
-                # Look in siblings or nearby elements
-                parent_item = item_elem.find_parent('div', class_='item')
-                if parent_item:
-                    gold_elem = parent_item.find('div', class_='gold')
-            
-            if gold_elem:
-                cost_info = self._extract_cost_from_gold_elem(gold_elem)
-                item_info.update(cost_info)
-            
-            # Determine table position (helps identify main item)
-            row = item_elem.find_parent('tr')
-            if row:
-                table = row.find_parent('table')
-                if table:
-                    all_rows = table.find_all('tr')
-                    item_info['row_index'] = all_rows.index(row) if row in all_rows else 999
+                if recipe_header:
+                    # Find the associated infobox-section right after the header
+                    recipe_section = recipe_header.find_next_sibling('div', class_='infobox-section')
                     
-                    # Count cells in row (main item often in different column structure)
-                    cells = row.find_all(['td', 'th'])
-                    item_info['cell_count'] = len(cells)
-            
-            return item_info
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting detailed item info: {e}")
-            return None
-    
-    def _extract_cost_from_gold_elem(self, gold_elem: Tag) -> Dict[str, int]:
-        """Extract cost information from gold element."""
-        try:
-            cost_info = {}
-            gold_text = gold_elem.get_text()
-            
-            # Extract total cost (first number)
-            total_match = re.search(r'(\d+)', gold_text)
-            if total_match:
-                cost_info['total_cost'] = int(total_match.group(1))
-            
-            # Extract combine cost (number in parentheses)
-            combine_match = re.search(r'\((\d+)\)', gold_text)
-            if combine_match:
-                cost_info['combine_cost'] = int(combine_match.group(1))
-            else:
-                cost_info['combine_cost'] = 0
-            
-            return cost_info
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting cost from gold element: {e}")
-            return {}
-    
-    def _identify_main_item_improved(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """IMPROVED: Better main item identification using multiple criteria."""
-        try:
-            if not items:
-                return {}
-            
-            # Score each item based on multiple criteria
-            scored_items = []
-            
-            for item in items:
-                score = 0
-                
-                # Criterion 1: Highest total cost (strong indicator)
-                total_cost = item.get('total_cost', 0)
-                if total_cost > 0:
-                    max_cost = max(i.get('total_cost', 0) for i in items)
-                    if total_cost == max_cost:
-                        score += 3
-                
-                # Criterion 2: Has combine cost (indicates built item)
-                if item.get('combine_cost', 0) > 0:
-                    score += 2
-                
-                # Criterion 3: Position in table (first row often main item)
-                row_index = item.get('row_index', 999)
-                if row_index == 0:
-                    score += 1
-                
-                # Criterion 4: Complex names often indicate main items
-                name = item['name']
-                if len(name.split()) > 2 or "'s" in name:
-                    score += 1
-                
-                scored_items.append((score, item))
-            
-            # Return item with highest score
-            scored_items.sort(key=lambda x: x[0], reverse=True)
-            return scored_items[0][1]
-            
-        except Exception as e:
-            self.logger.error(f"Error identifying main item: {e}")
-            return items[0] if items else {}
-    
-    def _deduplicate_components(self, components: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Remove duplicate components while preserving the most complete information."""
-        try:
-            seen_names = {}
-            unique_components = []
-            
-            for comp in components:
-                name = comp['name']
-                if name not in seen_names:
-                    seen_names[name] = comp
-                    unique_components.append(comp)
-                else:
-                    # Keep the one with more complete cost information
-                    existing = seen_names[name]
-                    if comp.get('total_cost', 0) > existing.get('total_cost', 0):
-                        # Replace with more complete version
-                        idx = unique_components.index(existing)
-                        unique_components[idx] = comp
-                        seen_names[name] = comp
-            
-            return unique_components
-            
-        except Exception as e:
-            self.logger.error(f"Error deduplicating components: {e}")
-            return components
-    
-    def _format_component_line(self, component: Dict[str, Any]) -> str:
-        """Format a component line with cost information."""
-        try:
-            name = component['name']
-            total_cost = component.get('total_cost', 0)
-            combine_cost = component.get('combine_cost', 0)
-            
-            if total_cost > 0:
-                if combine_cost > 0:
-                    return f"+-- {name} - {total_cost} ({combine_cost} combine)"
-                else:
-                    return f"+-- {name} - {total_cost}"
-            else:
-                return f"+-- {name}"
-                
-        except Exception as e:
-            self.logger.error(f"Error formatting component line: {e}")
-            return f"+-- {component.get('name', 'Unknown')}"
-    
-    def _extract_item_name_flexible(self, item_elem: Tag) -> Optional[str]:
-        """FIXED: Flexible item name extraction from various HTML structures."""
-        try:
-            # Try multiple extraction methods
-            
-            # Method 1: Look for <b><a> structure
-            bold_link = item_elem.select_one('b > a')
-            if bold_link:
-                return bold_link.get_text().strip()
-            
-            # Method 2: Look for any link within the element
-            any_link = item_elem.find('a')
-            if any_link:
-                link_text = any_link.get_text().strip()
-                if link_text and len(link_text) > 1:
-                    return link_text
-            
-            # Method 3: Look for data-item attribute
-            if item_elem.get('data-item'):
-                return item_elem.get('data-item').strip()
-            
-            # Method 4: Look for bold text
-            bold_elem = item_elem.find('b')
-            if bold_elem:
-                bold_text = bold_elem.get_text().strip()
-                if bold_text and len(bold_text) > 1:
-                    return bold_text
-            
-            # Method 5: Check parent elements for data-item
-            parent = item_elem.parent
-            if parent and parent.get('data-item'):
-                return parent.get('data-item').strip()
-            
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting item name flexibly: {e}")
-            return None
-    
-    def _extract_components_from_section(self, section: Tag) -> Optional[List[str]]:
-        """Extract component names from a recipe section."""
-        try:
-            components = []
-            
-            # Look for item links in the section
-            links = section.find_all('a')
-            for link in links:
-                href = link.get('href', '')
-                # Filter for actual item links (not categories, files, etc.)
-                if '/wiki/' in href or '/en-us/' in href:
-                    if not any(skip in href for skip in ['Category:', 'File:', 'Special:', 'Template:']):
-                        item_name = link.get_text().strip()
-                        if item_name and len(item_name) > 1 and item_name not in components:
-                            components.append(item_name)
-            
-            return components if components else None
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting components from section: {e}")
-            return None
-    
-    def _extract_recipe_from_infobox(self, infobox: Tag) -> Optional[List[str]]:
-        """Extract recipe components from infobox if available."""
-        try:
-            components = []
-            
-            # Look for recipe-related sections in infobox
-            recipe_sections = infobox.find_all('div', class_='infobox-section')
-            for section in recipe_sections:
-                # Check if this section contains recipe info
-                links = section.find_all('a')
-                for link in links:
-                    href = link.get('href', '')
-                    if '/wiki/' in href or '/en-us/' in href:
-                        if not any(skip in href for skip in ['Category:', 'File:', 'Special:']):
-                            item_name = link.get_text().strip()
-                            if item_name and item_name not in components:
-                                components.append(item_name)
-            
-            return components if components else None
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting recipe from infobox: {e}")
-            return None
-
-    def _identify_main_item(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Identify the main item (highest cost or has combine cost)."""
-        try:
-            if not items:
-                return {}
-            
-            # Find item with highest total cost
-            main_item = max(items, key=lambda x: x.get('total_cost', 0))
-            
-            # Prefer items with combine cost (indicates it's built from components)
-            for item in items:
-                if item.get('combine_cost') and item.get('total_cost', 0) >= main_item.get('total_cost', 0):
-                    main_item = item
-                    break
-            
-            return main_item
-            
-        except Exception as e:
-            self.logger.error(f"Error identifying main item: {e}")
-            return items[0] if items else {}
-
-    def _build_recipe_hierarchy(self, main_item: Dict[str, Any], components: List[Dict[str, Any]]) -> List[str]:
-        """FIXED: Build component tree with proper deduplication and structure."""
-        try:
-            if not components:
-                return []
-            
-            # Remove duplicates based on name while preserving order
-            seen_names = set()
-            unique_components = []
-            for comp in components:
-                name = comp.get('name', '').strip()
-                if name and name not in seen_names:
-                    unique_components.append(comp)
-                    seen_names.add(name)
-            
-            if not unique_components:
-                return []
-            
-            # Build simple flat tree structure for recipe display
-            recipe_tree = []
-            for comp in unique_components:
-                name = comp.get('name', 'Unknown')
-                cost = comp.get('total_cost')
-                combine_cost = comp.get('combine_cost', 0)
-                
-                # Format the component line
-                if cost and cost > 0:
-                    if combine_cost and combine_cost > 0:
-                        cost_str = f" - {cost} ({combine_cost} combine)"
-                    else:
-                        cost_str = f" - {cost}"
-                else:
-                    cost_str = ""
-                
-                recipe_tree.append(f"+-- {name}{cost_str}")
-            
-            return recipe_tree
-            
-        except Exception as e:
-            self.logger.error(f"Error building recipe hierarchy: {e}")
-            return []
-
-
-
-
-    def _find_sub_components_for_item(self, intermediate_item: Dict[str, Any], basic_items: List[Dict[str, Any]], assigned: set) -> List[Dict[str, Any]]:
-        """Find basic items that likely build into the intermediate item."""
-        try:
-            intermediate_cost = intermediate_item.get('total_cost', 0)
-            combine_cost = intermediate_item.get('combine_cost', 0)
-            target_basic_cost = intermediate_cost - combine_cost
-            
-            available_basic = [b for b in basic_items if b.get('name') not in assigned]
-            return self._find_exact_components(available_basic, target_basic_cost)
-            
-        except Exception as e:
-            self.logger.error(f"Error finding sub-components: {e}")
-            return []
-
-    def _extract_item_name_and_price_css(self, item_div: Tag) -> Optional[Dict[str, Any]]:
-        """Extract item name and price using specific CSS navigation."""
-        try:
-            item_info = {}
-            
-            # Extract item name from: div.item-icon.name > b > a
-            name_link = item_div.select_one('b > a')
-            if name_link:
-                item_info['name'] = name_link.get_text().strip()
-            elif item_div.find('b'):
-                # Fallback: just the bold text
-                item_info['name'] = item_div.find('b').get_text().strip()
-            
-            # Extract prices from the parent item div structure
-            # Look for the parent div.item that contains both name and gold info
-            parent_item_div = item_div.find_parent('div', class_='item')
-            if parent_item_div:
-                # Look for gold div with cost information
-                gold_div = parent_item_div.find('div', class_='gold')
-                if gold_div:
-                    # Extract costs from spans with white-space:normal style
-                    cost_spans = gold_div.find_all('span', style=lambda x: x and 'white-space:normal' in x)
-                    
-                    if cost_spans:
-                        # First span is usually total cost
-                        total_cost_text = cost_spans[0].get_text().strip()
-                        try:
-                            total_cost = int(total_cost_text)
-                            item_info['total_cost'] = total_cost
-                            
-                            # ENHANCED: Look for combine cost in multiple patterns from actual HTML
-                            gold_text = gold_div.get_text()
-                            
-                            # Try multiple extraction methods for combine cost
-                            combine_cost_found = False
-                            
-                            # Method 1: Look in all spans for parentheses pattern  
-                            all_spans = gold_div.find_all('span')
-                            for span in all_spans:
-                                span_text = span.get_text().strip()
-                                combine_match = re.search(r'\((\d+)\)', span_text)
-                                if combine_match:
-                                    item_info['combine_cost'] = int(combine_match.group(1))
-                                    combine_cost_found = True
-                                    self.logger.debug(f"Found combine cost in span: {combine_match.group(1)}")
-                                    break
-                            
-                            if not combine_cost_found:
-                                # Method 2: Look for "+ number" pattern
-                                plus_match = re.search(r'\+\s*(\d+)', gold_text)
-                                if plus_match:
-                                    item_info['combine_cost'] = int(plus_match.group(1))
-                                    combine_cost_found = True
-                                    self.logger.debug(f"Found combine cost with +: {plus_match.group(1)}")
-                            
-                            if not combine_cost_found:
-                                # Method 3: Look for "combine" keyword with number
-                                combine_word_match = re.search(r'combine[:\s]*(\d+)', gold_text, re.IGNORECASE)
-                                if combine_word_match:
-                                    item_info['combine_cost'] = int(combine_word_match.group(1))
-                                    combine_cost_found = True
-                                    self.logger.debug(f"Found combine cost with keyword: {combine_word_match.group(1)}")
-                            
-                            if not combine_cost_found:
-                                # Method 4: Check if there are multiple cost values (total + combine)
-                                numbers = re.findall(r'\d+', gold_text)
-                                if len(numbers) >= 2:
-                                    # If we have multiple numbers, second one might be combine cost
-                                    potential_combine = int(numbers[1])
-                                    if potential_combine < total_cost and potential_combine > 0:
-                                        item_info['combine_cost'] = potential_combine
-                                        combine_cost_found = True
-                                        self.logger.debug(f"Inferred combine cost from multiple numbers: {potential_combine}")
-                            
-                            if not combine_cost_found:
-                                # Default: no combine cost found
-                                item_info['combine_cost'] = 0
-                                self.logger.debug(f"No combine cost found for {item_info.get('name', 'Unknown')}, treating as basic item")
-                        except ValueError:
-                            pass
-            
-            return item_info if item_info.get('name') else None
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting item name and price: {e}")
-            return None
-
-    def _parse_hierarchical_recipe_table(self, table: Tag) -> Optional[Dict[str, Any]]:
-        """ENHANCED: Parse recipe table to create hierarchical tree structure like: Echoes of Helia - 2200(500)"""
-        try:
-            # Extract all items from the table
-            all_items = []
-            item_divs = table.find_all('div', class_='item')
-            
-            for item_div in item_divs:
-                item_info = self._extract_detailed_item_from_div(item_div)
-                if item_info:
-                    # Determine item position/level in hierarchy based on table structure
-                    row = item_div.find_parent('tr')
-                    if row:
-                        # Count cells/columns to determine depth
-                        cells = row.find_all(['td', 'th'])
-                        item_info['table_position'] = len(cells)
-                        item_info['parent_row'] = row
-                    
-                    all_items.append(item_info)
-            
-            if not all_items:
-                return None
-            
-            # Build hierarchical structure
-            recipe_tree = self._build_recipe_tree(all_items)
-            
-            return {
-                'recipe_tree': recipe_tree,
-                'structured_format': self._format_recipe_tree(recipe_tree)
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error parsing hierarchical recipe table: {e}")
-            return None
-
-    def _build_recipe_tree(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Build hierarchical tree structure from items based on table position."""
-        try:
-            if not items:
-                return {}
-            
-            # Find the main item (typically first or with highest cost)
-            main_item = None
-            components = []
-            
-            for item in items:
-                if self._is_main_recipe_item_enhanced(item, items):
-                    main_item = item
-                else:
-                    components.append(item)
-            
-            if not main_item and items:
-                # Fallback: use first item as main
-                main_item = items[0]
-                components = items[1:]
-            
-            # Create tree structure
-            tree = {
-                'name': main_item.get('name', 'Unknown'),
-                'total_cost': main_item.get('total_cost'),
-                'combine_cost': main_item.get('combine_cost'),
-                'components': []
-            }
-            
-            # Group components by their relationships
-            processed_components = set()
-            
-            for component in components:
-                if component.get('name') in processed_components:
-                    continue
-                
-                component_tree = {
-                    'name': component.get('name', 'Unknown'),
-                    'total_cost': component.get('total_cost'),
-                    'combine_cost': component.get('combine_cost'),
-                    'components': []
-                }
-                
-                # Find sub-components for this component
-                sub_components = self._find_sub_components(component, components)
-                for sub_comp in sub_components:
-                    if sub_comp.get('name') not in processed_components:
-                        component_tree['components'].append({
-                            'name': sub_comp.get('name', 'Unknown'),
-                            'total_cost': sub_comp.get('total_cost'),
-                            'combine_cost': sub_comp.get('combine_cost'),
-                            'components': []
-                        })
-                        processed_components.add(sub_comp.get('name'))
-                
-                tree['components'].append(component_tree)
-                processed_components.add(component.get('name'))
-            
-            return tree
-            
-        except Exception as e:
-            self.logger.error(f"Error building recipe tree: {e}")
-            return {}
-
-    def _format_recipe_tree(self, tree: Dict[str, Any]) -> List[str]:
-        """Format recipe tree into readable hierarchical text format."""
-        try:
-            formatted_lines = []
-            
-            def format_item(item: Dict[str, Any], indent: int = 0) -> None:
-                name = item.get('name', 'Unknown')
-                total_cost = item.get('total_cost')
-                combine_cost = item.get('combine_cost')
-                
-                # Create cost string
-                cost_str = ""
-                if total_cost:
-                    cost_str = f" - {total_cost}"
-                    if combine_cost:
-                        cost_str += f"({combine_cost})"
-                
-                # Create indented line
-                indent_str = "  " * indent
-                formatted_lines.append(f"{indent_str}{name}{cost_str}")
-                
-                # Process components recursively
-                for component in item.get('components', []):
-                    format_item(component, indent + 1)
-            
-            format_item(tree)
-            return formatted_lines
-            
-        except Exception as e:
-            self.logger.error(f"Error formatting recipe tree: {e}")
-            return []
-
-    def _is_main_recipe_item_enhanced(self, item: Dict[str, Any], all_items: List[Dict[str, Any]]) -> bool:
-        """Enhanced detection of main recipe item."""
-        try:
-            # Multiple strategies to identify main item
-            
-            # Strategy 1: Highest total cost (most reliable)
-            item_cost = item.get('total_cost', 0)
-            if item_cost > 0:
-                max_cost = max([i.get('total_cost', 0) for i in all_items])
-                if item_cost == max_cost:
-                    return True
-            
-            # Strategy 2: Has combine cost (indicates it's built from components)
-            if item.get('combine_cost'):
-                return True
-            
-            # Strategy 3: Table position (first in layout)
-            if item.get('table_position', 999) <= min([i.get('table_position', 999) for i in all_items]):
-                return True
-            
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"Error in main item detection: {e}")
-            return False
-
-    def _find_sub_components(self, component: Dict[str, Any], all_components: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Find sub-components that build into the given component."""
-        try:
-            sub_components = []
-            component_cost = component.get('total_cost', 0)
-            
-            for other_comp in all_components:
-                other_cost = other_comp.get('total_cost', 0)
-                
-                # Sub-components should have lower cost and not be the same item
-                if (other_cost < component_cost and 
-                    other_comp.get('name') != component.get('name') and
-                    other_cost > 0):
-                    sub_components.append(other_comp)
-            
-            # Sort by cost (highest first for logical hierarchy)
-            sub_components.sort(key=lambda x: x.get('total_cost', 0), reverse=True)
-            
-            return sub_components
-            
-        except Exception as e:
-            self.logger.error(f"Error finding sub-components: {e}")
-            return []
-
-    def _extract_detailed_item_from_div(self, item_div: Tag) -> Optional[Dict[str, Any]]:
-        """Extract detailed item information including costs and relationships."""
-        try:
-            item_info = {}
-            
-            # Extract item name - FIXED: Use correct HTML structure
-            # HTML structure: <div class="item-icon name" data-item="Kindlegem"><b><a>Kindlegem</a></b></div>
-            name_elem = item_div.find('div', class_='item-icon name')
-            if name_elem:
-                # Look for <b><a> structure first
-                bold_elem = name_elem.find('b')
-                if bold_elem:
-                    link = bold_elem.find('a')
-                    if link:
-                        item_info['name'] = link.get_text().strip()
-                    else:
-                        item_info['name'] = bold_elem.get_text().strip()
-                else:
-                    # Fallback to any link in the name element
-                    link = name_elem.find('a')
-                    if link:
-                        item_info['name'] = link.get_text().strip()
-            
-            # Also try data-item attribute as fallback
-            if not item_info.get('name'):
-                data_item_elem = item_div.find('[data-item]')
-                if data_item_elem:
-                    item_info['name'] = data_item_elem.get('data-item', '').strip()
-            
-            # Extract costs from gold element - FIXED: Better pattern matching
-            gold_elem = item_div.find('div', class_='gold')
-            if gold_elem:
-                # Look for gold spans with specific structure
-                gold_spans = gold_elem.find_all('span', style=lambda x: x and 'white-space:normal' in x)
-                
-                if gold_spans and len(gold_spans) >= 1:
-                    # First span is total cost, second (if exists) is combine cost in parentheses
-                    total_cost_text = gold_spans[0].get_text().strip()
-                    try:
-                        total_cost = int(total_cost_text)
-                        item_info['total_cost'] = total_cost
+                    if recipe_section:
+                        # Look for item icons with data-item attributes
+                        item_icons = recipe_section.find_all('span', class_='inline-image item-icon')
                         
-                        # Check for combine cost in parentheses pattern: "2200 (500)"
-                        full_text = gold_elem.get_text().strip()
-                        combine_match = re.search(r'\((\d+)\)', full_text)
-                        if combine_match:
-                            combine_cost = int(combine_match.group(1))
-                            item_info['combine_cost'] = combine_cost
-                            item_info['component_cost'] = total_cost - combine_cost
-                    except ValueError:
-                        # Fallback to original regex method
-                        cost_text = gold_elem.get_text().strip()
-                        cost_match = re.search(r'(\d+)(?:\s*\((\d+)\))?', cost_text)
-                        if cost_match:
-                            total_cost = int(cost_match.group(1))
-                            combine_cost = int(cost_match.group(2)) if cost_match.group(2) else 0
-                            
-                            item_info['total_cost'] = total_cost
-                            if combine_cost > 0:
-                                item_info['combine_cost'] = combine_cost
-                                item_info['component_cost'] = total_cost - combine_cost
+                        for icon in item_icons:
+                            # Extract from data-item attribute (most reliable)
+                            data_item = icon.get('data-item', '').strip()
+                            if data_item and len(data_item) > 2:
+                                recipe_components.append(data_item)
+                            else:
+                                # Fallback: extract from nested link
+                                link = icon.find('a')
+                                if link:
+                                    item_name = self._validate_item_link(link)
+                                    if item_name:
+                                        recipe_components.append(item_name)
             
-            # Extract icon information
-            icon_elem = item_div.find('span', class_='inline-image')
-            if icon_elem:
-                img = icon_elem.find('img')
-                if img:
-                    item_info['icon_url'] = img.get('src', '')
-            
-            return item_info if item_info.get('name') else None
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting detailed item from div: {e}")
-            return None
-
-    def _is_main_recipe_item(self, item_div: Tag, item_info: Dict[str, Any]) -> bool:
-        """FIXED: Better detection of main item vs components using table structure."""
-        try:
-            # Strategy 1: Check table position - main item is typically in first row
-            parent_row = item_div.find_parent('tr')
-            if parent_row:
-                table = item_div.find_parent('table')
-                if table:
-                    all_rows = table.find_all('tr')
-                    if all_rows and parent_row == all_rows[0]:
-                        # This is in the first row - likely main item
-                        return True
-            
-            # Strategy 2: Check for golden border indicating main item
-            border_elem = item_div.find('span', class_='border')
-            if border_elem:
-                style_attr = border_elem.get('style', '')
-                # Golden border indicates main item (completed item)
-                if '#FFD700' in style_attr or 'FFD700' in style_attr:
-                    return True
-            
-            # Strategy 3: Check item cost - main item typically has highest cost
-            if item_info.get('total_cost', 0) >= 2000:  # Completed items usually 2000+ gold
-                return True
-            
-            # Strategy 4: Check for combine cost presence - main item has combine cost
-            if item_info.get('combine_cost') is not None:
-                return True
-            
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"Error determining main recipe item: {e}")
-            return False
-
-    def _group_components_hierarchically(self, components: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Group components into hierarchical structure based on costs and relationships."""
-        try:
-            # Sort components by cost (higher cost items are usually intermediate components)
-            components.sort(key=lambda x: x.get('total_cost', 0), reverse=True)
-            
-            main_components = []
-            basic_components = []
-            
-            for component in components:
-                total_cost = component.get('total_cost', 0)
-                combine_cost = component.get('combine_cost', 0)
+            # Strategy 2: Look for Recipe section header (alternative structure)
+            if not recipe_components:
+                recipe_heading = soup.find(['h2', 'h3'], string=lambda text: 
+                    text and 'recipe' in text.lower())
                 
-                # Items with combine costs are intermediate components
-                if combine_cost > 0:
-                    main_components.append(component)
-                else:
-                    # Basic components (no combine cost)
-                    basic_components.append(component)
+                if recipe_heading:
+                    # Look for content after the heading
+                    current = recipe_heading.find_next_sibling()
+                    while current and current.name not in ['h2', 'h3', 'h4']:
+                        if current.name in ['div', 'ul', 'ol', 'table']:
+                            # Extract item links from this section
+                            item_links = self._extract_recipe_item_links(current)
+                            recipe_components.extend(item_links)
+                            if recipe_components:  # Stop if we found items
+                                break
+                        current = current.find_next_sibling()
             
-            # Try to associate basic components with intermediate components
-            for main_comp in main_components:
-                main_comp['sub_components'] = []
-                component_cost = main_comp.get('component_cost', 0)
-                
-                # Find basic components that could build into this intermediate component
-                remaining_basic = []
-                for basic in basic_components:
-                    basic_cost = basic.get('total_cost', 0)
-                    # Simple heuristic: if basic component cost is reasonable for this intermediate
-                    if basic_cost <= component_cost:
-                        main_comp['sub_components'].append(basic['name'])
-                    else:
-                        remaining_basic.append(basic)
-                
-                basic_components = remaining_basic
+            # Strategy 3: Fallback - look for any item icons in infobox (less reliable)
+            if not recipe_components:
+                if infobox:
+                    all_item_icons = infobox.find_all('span', class_='inline-image item-icon')
+                    for icon in all_item_icons:
+                        data_item = icon.get('data-item', '').strip()
+                        if data_item and len(data_item) > 2:
+                            # Basic filtering to avoid duplicates and non-items
+                            if data_item not in recipe_components:
+                                recipe_components.append(data_item)
             
-            # Add any remaining basic components as direct components
-            for basic in basic_components:
-                main_components.append(basic)
-            
-            return main_components
-            
-        except Exception as e:
-            self.logger.error(f"Error grouping components hierarchically: {e}")
-            return components  # Return flat list as fallback
-
-    def _extract_simple_recipe_fallback(self, soup: BeautifulSoup) -> Optional[List[str]]:
-        """FIXED: Improved fallback method for recipe extraction."""
-        try:
-            components = []
-            
-            # Look for any links that might be item components
-            all_links = soup.find_all('a')
-            for link in all_links:
-                href = link.get('href', '')
-                # Filter for item links
-                if ('/wiki/' in href or '/en-us/' in href) and not any(skip in href for skip in 
-                    ['Category:', 'File:', 'Special:', 'Template:', 'User:', 'Help:']):
-                    
-                    item_name = link.get_text().strip()
-                    # Filter out very short or obviously non-item names
-                    if (item_name and len(item_name) > 2 and 
-                        item_name not in components and
-                        not item_name.lower() in ['edit', 'view', 'talk', 'here', 'this', 'that']):
-                        
-                        # Additional filtering for likely item names
-                        if (any(char.isalpha() for char in item_name) and 
-                            not item_name.startswith('Category:')):
-                            components.append(item_name)
-            
-            # Limit to reasonable number of components (max 10 for LoL items)
-            if components:
-                # Remove duplicates while preserving order
-                unique_components = []
+            # Clean and format results
+            if recipe_components:
+                unique_items = []
                 seen = set()
-                for comp in components[:10]:  # Limit to first 10
-                    if comp not in seen:
-                        unique_components.append(comp)
-                        seen.add(comp)
                 
-                if unique_components:
-                    return [f"+-- {comp}" for comp in unique_components]
+                for item in recipe_components:
+                    if item and item not in seen and len(item) > 2:
+                        # Additional validation
+                        if not any(skip in item.lower() for skip in ['gold', 'icon', 'image']):
+                            unique_items.append(f"+-- {item}")
+                            seen.add(item)
+                
+                return unique_items[:6] if unique_items else None  # Limit to 6 reasonable components
             
             return None
             
         except Exception as e:
-            self.logger.error(f"Error in simple recipe fallback: {e}")
+            self.logger.error(f"Error extracting sidebar recipe: {e}")
+            return None
+    
+    def _extract_recipe_item_links(self, element: Tag) -> List[str]:
+        """FIXED: Extract only actual recipe item links with better filtering."""
+        try:
+            items = []
+            
+            # Look for actual item links with specific validation
+            links = element.find_all('a')
+            for link in links:
+                item_name = self._validate_item_link(link)
+                if item_name:
+                    items.append(item_name)
+            
+            return items
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting recipe item links: {e}")
+            return []
+    
+    def _validate_item_link(self, link: Tag) -> Optional[str]:
+        """Validate if a link points to an actual LoL item."""
+        try:
+            href = link.get('href', '')
+            item_name = link.get_text().strip()
+            
+            # Must have proper wiki href pattern
+            if not ('/wiki/' in href or href.startswith('/')):
+                return None
+            
+            # Filter out non-item links
+            if any(skip in href for skip in [
+                'Category:', 'File:', 'Special:', 'Template:', 'User:', 'Help:', 
+                'Talk:', 'Project:', '#', 'action=', 'oldid='
+            ]):
+                return None
+            
+            # Filter out non-item text patterns
+            if not item_name or len(item_name) < 3:
+                return None
+            
+            # Filter out UI elements and game modes
+            if any(ui_word in item_name.lower() for ui_word in [
+                'cost', 'sell', 'availability', 'menu', 'marksman', 'attack damage',
+                'sr 5v5', 'ha aram', 'nexus blitz', 'arena', 'gold', 'edit', 'view',
+                'here', 'this', 'that', 'more', 'less', 'show', 'hide'
+            ]):
+                return None
+            
+            # Must look like an actual item name (starts with capital, reasonable length)
+            if not item_name[0].isupper() or len(item_name) > 50:
+                return None
+            
+            # Filter out pure numbers or IDs
+            if item_name.isdigit() or re.match(r'^\d+[A-Za-z]*\d*$', item_name):
+                return None
+            
+            return item_name
+            
+        except Exception as e:
+            self.logger.error(f"Error validating item link: {e}")
             return None
 
     def _extract_builds_info_section(self, soup: BeautifulSoup) -> Optional[Dict[str, Any]]:
@@ -1797,14 +851,21 @@ class ItemDataScraper(BaseScraper):
     async def _extract_cost_analysis(self, soup: BeautifulSoup, url: str) -> Optional[str]:
         """FIXED: Extract clean cost analysis text with proper formatting."""
         try:
-            # Try static extraction first
+            # Try static extraction first - look for mw-collapsible with Cost Analysis
+            cost_section = self._find_cost_analysis_section(soup)
+            if cost_section:
+                formatted_text = self._extract_formatted_cost_analysis(cost_section)
+                if formatted_text:
+                    return formatted_text
+            
+            # Fallback: try the old method
             cost_section = self._find_section_by_pattern(soup, ['cost analysis', 'gold efficiency', 'gold value'])
             if cost_section:
                 formatted_text = self._extract_formatted_cost_analysis(cost_section)
                 if formatted_text:
                     return formatted_text
             
-            # Look for expandable cost analysis sections
+            # Look for expandable cost analysis sections that need Selenium
             expandable_elements = soup.find_all('div', class_='mw-collapsible')
             cost_expandable = None
             
@@ -1824,47 +885,216 @@ class ItemDataScraper(BaseScraper):
             self.logger.error(f"Error extracting cost analysis: {e}")
             return None
 
-    def _extract_formatted_cost_analysis(self, section: Tag) -> Optional[str]:
-        """FIXED: Extract properly formatted cost analysis text."""
+    def _extract_builds_info_section(self, soup: BeautifulSoup) -> Optional[Dict[str, Any]]:
+        """Extract builds into information (for basic/epic items)."""
         try:
-            # Get clean text content
-            section_text = section.get_text(separator='\n', strip=True)
-            
-            # Clean up encoding issues and formatting
-            formatted_text = self._clean_cost_analysis_text(section_text)
-            
-            if not formatted_text:
+            builds_section = self._find_section_by_pattern(soup, ['builds into', 'builds'])
+            if not builds_section:
                 return None
             
-            # Structure the output nicely
+            builds_data = {
+                'builds_into': []
+            }
+            
+            # Extract item links
+            item_links = builds_section.find_all('a')
+            for link in item_links:
+                href = link.get('href', '')
+                if '/en-us/' in href and not any(skip in href for skip in ['Category:', 'File:', 'Special:']):
+                    item_name = link.get_text().strip()
+                    if item_name and item_name not in builds_data['builds_into']:
+                        builds_data['builds_into'].append(item_name)
+            
+            return builds_data if builds_data['builds_into'] else None
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting builds info: {e}")
+            return None
+
+    def _find_cost_analysis_section(self, soup: BeautifulSoup) -> Optional[Tag]:
+        """Find the Cost Analysis section in mw-collapsible structure."""
+        try:
+            # Look for mw-collapsible with Cost Analysis header
+            collapsibles = soup.find_all('div', class_='mw-collapsible')
+            
+            for collapsible in collapsibles:
+                # Check if this collapsible contains Cost Analysis
+                header = collapsible.find(['h2', 'h3'], string=lambda text: 
+                    text and 'cost analysis' in text.lower())
+                if header:
+                    return collapsible
+            
+            # Alternative: look for mw-headline with Cost_Analysis id
+            cost_headline = soup.find('span', class_='mw-headline', id='Cost_Analysis')
+            if cost_headline:
+                # Find the parent collapsible
+                parent = cost_headline.find_parent('div', class_='mw-collapsible')
+                if parent:
+                    return parent
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error finding cost analysis section: {e}")
+            return None
+
+    def _extract_formatted_cost_analysis(self, section: Tag) -> Optional[str]:
+        """FIXED: Extract cost analysis from mw-collapsible structure properly."""
+        try:
             lines = []
-            current_section = None
             
-            for line in formatted_text.split('\n'):
-                line = line.strip()
-                if not line:
-                    continue
+            # Look for mw-collapsible-content (the expanded content area)
+            collapsible_content = section.find('div', class_='mw-collapsible-content')
+            if not collapsible_content:
+                # If no collapsible, try to use the section directly
+                collapsible_content = section
+            
+            # Extract Gold Value section
+            gold_value_header = collapsible_content.find(string=lambda text: 
+                text and 'gold value' in text.lower())
+            if gold_value_header:
+                lines.append('Gold Value:')
                 
-                # Detect section headers
-                if any(header in line.lower() for header in ['gold value', 'gold efficiency', 'total']):
-                    if 'gold value' in line.lower():
-                        current_section = 'Gold Value'
-                    elif 'efficiency' in line.lower():
-                        current_section = 'Gold efficiency'
-                    lines.append(current_section)
-                    if line != current_section:
-                        lines.append(line)
-                else:
-                    lines.append(line)
+                # Find the UL with individual stat entries
+                parent = gold_value_header.parent if gold_value_header else None
+                if parent:
+                    # Look for the next UL element
+                    ul_element = parent.find_next_sibling('ul') or parent.find_next('ul')
+                    if ul_element:
+                        li_elements = ul_element.find_all('li')
+                        for li in li_elements:
+                            # Extract stat line carefully
+                            stat_line = self._extract_clean_stat_line(li)
+                            if stat_line:
+                                lines.append(stat_line)
             
-            return '\n'.join(lines) if lines else formatted_text
+            # Look for Total Gold Value
+            total_patterns = ['total gold value', 'total:', 'worth:']
+            for pattern in total_patterns:
+                total_element = collapsible_content.find(string=lambda text: 
+                    text and pattern in text.lower())
+                if total_element:
+                    # Extract the total value and clean it
+                    total_text = total_element.strip()
+                    
+                    # Apply the same cleaning as stat lines
+                    total_text = self._fix_spaced_decimals_and_duplicates(total_text)
+                    
+                    if 'total gold value' not in total_text.lower():
+                        # Look for a number in nearby text
+                        parent = total_element.parent
+                        if parent:
+                            parent_text = parent.get_text()
+                            parent_text = self._fix_spaced_decimals_and_duplicates(parent_text)
+                            numbers = re.findall(r'\d+(?:\.\d+)?', parent_text)
+                            if numbers:
+                                total_text = f'Total Gold Value = {numbers[0]}'
+                    
+                    lines.append('')  # Empty line for separation
+                    lines.append(total_text)
+                    break
+            
+            # Look for efficiency statement
+            efficiency_patterns = ['gold efficient', 'efficiency']
+            for pattern in efficiency_patterns:
+                efficiency_element = collapsible_content.find(string=lambda text: 
+                    text and pattern in text.lower() and 'base stats' in text.lower())
+                if efficiency_element:
+                    lines.append('')  # Empty line for separation
+                    lines.append('Gold Efficiency')
+                    lines.append(efficiency_element.strip())
+                    break
+            
+            # Join lines and clean up
+            if lines:
+                # DEBUG: Check what's in the lines
+                print(f"DEBUG - Lines before joining: {lines}")
+                
+                # Create proper line breaks by joining with newlines
+                result = '\n'.join(lines)
+                
+                # DEBUG: Check result after joining
+                print(f"DEBUG - Result after join: {repr(result)}")
+                
+                # Clean up any remaining issues
+                result = re.sub(r'\n\s*\n\s*\n+', '\n\n', result)
+                # Process line breaks to ensure proper formatting
+                result = self._process_line_breaks(result)
+                
+                # DEBUG: Final result
+                print(f"DEBUG - Final result: {repr(result)}")
+                
+                return lines
+            
+            return None
             
         except Exception as e:
             self.logger.error(f"Error extracting formatted cost analysis: {e}")
             return None
     
+    def _extract_clean_stat_line(self, li_element: Tag) -> Optional[str]:
+        """Extract a clean stat line from an LI element, handling gold icons properly."""
+        try:
+            # Get text content first
+            full_text = li_element.get_text(strip=True)
+            
+            # Fix spaced decimals and duplicated numbers like "2275 gold 2275"
+            cleaned_text = self._fix_spaced_decimals_and_duplicates(full_text)
+            
+            # Clean up extra spaces and formatting
+            cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
+            cleaned_text = re.sub(r'\s*=\s*', ' = ', cleaned_text)
+            
+            return cleaned_text.strip() if cleaned_text else None
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting clean stat line: {e}")
+            return None
+    
+    def _fix_spaced_decimals_and_duplicates(self, text: str) -> str:
+        """Fix spaced decimals and remove duplicated numbers like '2275 gold 2275'."""
+        if not text:
+            return text
+        
+        # Fix spaced decimals like "0. 25" → "0.25"
+        fixed_text = re.sub(r'(\d)\s*\.\s*(\d)', r'\1.\2', text)
+        
+        # Fix Unicode characters
+        fixed_text = fixed_text.replace('\u2013', '-').replace('\u2014', '-')
+        fixed_text = fixed_text.replace('\u00a0', ' ')  # Non-breaking space
+        
+        # Remove duplicated number patterns like "2275 gold 2275" → "2275 gold"
+        # Pattern: number + (optional decimal) + space + "gold" + space + same number
+        fixed_text = re.sub(r'(\d+(?:\.\d+)?)\s+gold\s+\1(?!\d)', r'\1 gold', fixed_text)
+        
+        # Clean up multiple spaces
+        fixed_text = re.sub(r'\s+', ' ', fixed_text)
+        
+        return fixed_text.strip()
+    
+    def _process_line_breaks(self, text: str) -> str:
+        """Process line breaks to render properly - convert to actual line breaks."""
+        if not text:
+            return text
+        
+        # If the text contains literal \n sequences, replace them with actual newlines
+        if '\\n' in text:
+            processed = text.replace('\\n', '\n')
+        else:
+            processed = text
+        
+        # Clean up excessive line breaks - max 2 consecutive newlines  
+        processed = re.sub(r'\n\s*\n\s*\n+', '\n\n', processed)
+        
+        # Remove any trailing whitespace from lines
+        lines = processed.split('\n')
+        lines = [line.rstrip() for line in lines]
+        processed = '\n'.join(lines)
+        
+        return processed.strip()
+    
     def _clean_cost_analysis_text(self, text: str) -> Optional[str]:
-        """ENHANCED: Clean up encoding and formatting issues in cost analysis text."""
+        """FIXED: Clean up cost analysis with proper line breaks and readable formatting."""
         try:
             if not text:
                 return None
@@ -1875,28 +1105,49 @@ class ItemDataScraper(BaseScraper):
             cleaned = cleaned.replace('\u2014', '-')  # Em dash
             cleaned = cleaned.replace('\u2019', "'")  # Right single quotation mark
             
-            # Remove extra whitespace
-            cleaned = re.sub(r'\s+', ' ', cleaned)
+            # Remove extra whitespace but preserve line breaks
+            cleaned = re.sub(r'[ \t]+', ' ', cleaned)  # Only collapse spaces/tabs, not line breaks
             
-            # Fix stat patterns with proper spacing
-            cleaned = re.sub(r'(\d+(?:\.\d+)?)\s*(attack damage|ability power|armor|magic resistance|health|mana|critical strike chance|critical strike damage)\s*=\s*(\d+(?:\.\d+)?)', 
-                           r'\1 \2 = \3', cleaned, flags=re.IGNORECASE)
+            # CRITICAL FIX: Add line breaks between individual stat entries
+            # Pattern: "65 attack damage = 2275 25% critical strike chance = 1000"
+            # Should become: "65 attack damage = 2275\n25% critical strike chance = 1000"
+            cleaned = re.sub(
+                r'(\d+(?:\.\d+)?\s*(?:attack damage|ability power|armor|magic resistance|health|mana|critical strike chance|critical strike damage)\s*=\s*\d+(?:\.\d+)?)\s+'
+                r'(\d+(?:\.\d+)?%?\s*(?:attack damage|ability power|armor|magic resistance|health|mana|critical strike chance|critical strike damage))',
+                r'\1\n\2',
+                cleaned,
+                flags=re.IGNORECASE
+            )
             
-            # Fix percentage patterns - ensure proper spacing
-            cleaned = re.sub(r'(\d+(?:\.\d+)?)\s*%', r'\1%', cleaned)
+            # CRITICAL FIX: Separate percentage stats from regular stats
+            # Pattern: "= 2275 25% critical" -> "= 2275\n25% critical"
+            cleaned = re.sub(r'(=\s*\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?%)', r'\1\n\2', cleaned)
             
-            # Fix "Total Gold Value" patterns
-            cleaned = re.sub(r'Total\s+Gold\s+Value\s*=?\s*(\d+(?:\.\d+)?)', r'Total Gold Value = \1', cleaned, flags=re.IGNORECASE)
+            # Fix "Total Gold Value" patterns with proper line breaks
+            cleaned = re.sub(r'Total\s+Gold\s+Value\s*=?\s*(\d+(?:\.\d+)?)', r'\nTotal Gold Value = \1', cleaned, flags=re.IGNORECASE)
+            
+            # Add section breaks for "Gold efficiency"
+            cleaned = re.sub(r'Gold\s+efficiency', r'\n\nGold Efficiency', cleaned, flags=re.IGNORECASE)
             
             # Fix efficiency statements with proper formatting
-            cleaned = re.sub(r'([^.]*?)\s*(?:\'s)?\s*base\s+stats\s+are\s+(\d+(?:\.\d+)?)\s*%\s+gold\s+efficient', 
-                           r"\1's base stats are \2% gold efficient", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(
+                r'([^\n]*?)\s*(?:\'s)?\s*base\s+stats\s+are\s+(\d+(?:\.\d+)?)\s*%\s+gold\s+efficient',
+                r"\1's base stats are \2% gold efficient.",
+                cleaned,
+                flags=re.IGNORECASE
+            )
             
-            # Fix broken sentences and add proper line breaks
-            cleaned = re.sub(r'(\d+(?:\.\d+)?)\s*%\s*gold\s+efficient\.?\s*([A-Z])', r'\1% gold efficient.\n\n\2', cleaned, flags=re.IGNORECASE)
+            # Clean up section headers
+            cleaned = re.sub(r'^Gold\s*Value\s*Gold\s*Value', 'Gold Value', cleaned, flags=re.MULTILINE)
+            cleaned = re.sub(r'^Gold\s*Value(?!\s*=)', 'Gold Value:', cleaned, flags=re.MULTILINE)
             
-            # Fix Gold efficiency section headers
-            cleaned = re.sub(r'Gold\s+efficiency\s*([A-Z])', r'Gold efficiency\n\n\1', cleaned, flags=re.IGNORECASE)
+            # Fix stat formatting with consistent spacing
+            cleaned = re.sub(
+                r'(\d+(?:\.\d+)?)\s*(attack damage|ability power|armor|magic resistance|health|mana|critical strike chance|critical strike damage)\s*=\s*(\d+(?:\.\d+)?)',
+                r'\1 \2 = \3 gold',
+                cleaned,
+                flags=re.IGNORECASE
+            )
             
             # Clean up spacing around punctuation
             cleaned = cleaned.replace(' . ', '. ')
@@ -1906,17 +1157,14 @@ class ItemDataScraper(BaseScraper):
             cleaned = cleaned.replace(' )', ')')
             
             # Fix number formatting issues
-            cleaned = re.sub(r'(\d+)\s*\.\s*(\d+)', r'\1.\2', cleaned)  # Fix "96. 57" -> "96.57"
+            cleaned = re.sub(r'(\d+)\s*\.\s*(\d+)', r'\1.\2', cleaned)
             
-            # Add proper line breaks for readability
-            cleaned = re.sub(r'(Total Gold Value = \d+)\s*([A-Z])', r'\1\n\2', cleaned)
-            cleaned = re.sub(r'(gold efficient\.)\s*([A-Z])', r'\1\n\n\2', cleaned, flags=re.IGNORECASE)
-            
-            # Final cleanup
+            # Final cleanup - normalize line breaks
             cleaned = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned)  # Remove excessive line breaks
-            cleaned = re.sub(r'^\s+|\s+$', '', cleaned)  # Remove leading/trailing whitespace
+            cleaned = re.sub(r'^\s+|\s+$', '', cleaned, flags=re.MULTILINE)  # Remove leading/trailing whitespace per line
+            cleaned = cleaned.strip()  # Remove overall leading/trailing whitespace
             
-            return cleaned if cleaned.strip() else None
+            return cleaned if cleaned else None
             
         except Exception as e:
             self.logger.error(f"Error cleaning cost analysis text: {e}")
